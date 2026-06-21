@@ -11,6 +11,9 @@ DB_PORT ?= 6543
 DB_SSLMODE ?= disable
 DB_DSN = user=$(DB_USER) password=$(DB_PASSWORD) dbname=$(DB_NAME) host=$(DB_HOST) port=$(DB_PORT) sslmode=$(DB_SSLMODE)
 
+run:
+	go run cmd/sharetrip/main.go
+
 # Цель по умолчанию
 .PHONY: help
 help:

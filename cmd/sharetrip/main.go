@@ -35,7 +35,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	server := api.NewServer()
+	server := api.NewServer(pool)
 
 	app := fiber.New()
 	server.Route(app.Group("/api"))
