@@ -3,10 +3,10 @@ package handler
 import "job4j_go_share_trip/internal/domain/trip/service"
 
 type TripHandler struct {
-	TripService *service.Service
+	TripService *service.TripService
 }
 
-func NewTripHandler(tripService *service.Service) *TripHandler {
+func NewTripHandler(tripService *service.TripService) *TripHandler {
 	return &TripHandler{
 		TripService: tripService,
 	}

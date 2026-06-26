@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
+	"job4j_go_share_trip/internal/storage"
 )
 
 var ErrTripNotFound = errors.New("trip not found")
@@ -20,39 +22,63 @@ type Querier interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 }
 
-type Repository struct {
+type RowQuerier interface {
+    QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+type TripRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewPostgresRepository(db *pgxpool.Pool) *Repository {
-	return &Repository{db: db}
+func NewPostgresRepository(db *pgxpool.Pool) *TripRepository {
+	return &TripRepository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, trip *entity.Trip) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-    defer func() {
-        if err != nil {
-            if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-                log.Printf("failed to rollback transaction: %v", rollbackErr)
-            }
+func (r *TripRepository) Create(ctx context.Context, trip *entity.Trip) error {
+    err := storage.TxWithoutResult(ctx, r.db, func(tx pgx.Tx) (error) {
+        // 1. Создаем поездку
+        if err := r.CreateTrip(ctx, tx, trip); err != nil {
+            return fmt.Errorf("failed to create trip: %w", err)
         }
-    }()
 
-	if err := r.createTrip(ctx, tx, trip); err != nil {
-		return err
-	}
+        // 2. Создаем запись в истории
+        if err := r.CreateHistory(ctx, tx, trip.ID, nil, &trip.Status); err != nil {
+            return fmt.Errorf("failed to create history: %w", err)
+        }
 
-	if err := r.createHistory(ctx, tx, trip.ID, nil, &trip.Status); err != nil {
-		return err
-	}
+        return nil
+    })
 
-	return tx.Commit(ctx)
+    return err
 }
 
-func (r *Repository) createTrip(ctx context.Context, db Querier, trip *entity.Trip) error {
+func (r *TripRepository) Update(ctx context.Context, trip *entity.Trip, oldStatus entity.Status) (*entity.Trip, error) {
+    updatedTrip, err := storage.Tx(ctx, r.db, func(tx pgx.Tx) (*entity.Trip, error) {
+        if err := r.UpdateTrip(ctx, tx, trip); err != nil {
+            return nil, fmt.Errorf("failed to update trip: %w", err)
+        }
+
+        if err := r.CreateHistory(ctx, tx, trip.ID, &oldStatus, &trip.Status); err != nil {
+            return nil, fmt.Errorf("failed to create history: %w", err)
+        }
+
+        updated, err := r.GetByTripID(ctx, trip.ID)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get updated trip: %w", err)
+        }
+
+        // 4. Возвращаем обновлённую поездку
+        return updated, nil
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    return updatedTrip, nil
+}
+
+func (r *TripRepository) CreateTrip(ctx context.Context, db Querier, trip *entity.Trip) error {
 	const query = `
 		INSERT INTO public.trips (
 			id,
@@ -82,11 +108,30 @@ func (r *Repository) createTrip(ctx context.Context, db Querier, trip *entity.Tr
 	return err
 }
 
-func (r *Repository) CreateHistory(ctx context.Context, tripID uuid.UUID, fromStatus *entity.Status, toStatus *entity.Status) error {
-	return r.createHistory(ctx, r.db, tripID, fromStatus, toStatus)
+func (r *TripRepository) UpdateTrip(ctx context.Context, db Querier, trip *entity.Trip) error {
+    	const query = `
+    		UPDATE public.trips
+    		SET status = $1
+    		WHERE id = $2
+    	`
+
+    	_, err := db.Exec(
+            ctx,
+            query,
+            trip.Status,
+            trip.ID,
+    	)
+
+        return err
 }
 
-func (r *Repository) createHistory(ctx context.Context, db Querier, tripID uuid.UUID, fromStatus *entity.Status, toStatus *entity.Status) error {
+func (r *TripRepository) CreateHistory(
+	ctx context.Context,
+	db Querier,
+	tripID uuid.UUID,
+	fromStatus *entity.Status,
+	toStatus *entity.Status,
+) error {
 	if tripID == uuid.Nil {
 		return errors.New("trip_id is required")
 	}
@@ -126,13 +171,13 @@ func (r *Repository) createHistory(ctx context.Context, db Querier, tripID uuid.
 	builder.WriteString(strings.Join(placeholders, ", "))
 	builder.WriteString(")")
 
-    log.Println(builder.String())
+	log.Println(builder.String())
 
 	_, err := db.Exec(ctx, builder.String(), args...)
 	return err
 }
 
-func (r *Repository) GetByTripID(ctx context.Context, tripID uuid.UUID) (*entity.Trip, error) {
+func (r *TripRepository) GetByTripID(ctx context.Context, tripID uuid.UUID) (*entity.Trip, error) {
 	const query = `
 		SELECT
 			id,
@@ -166,5 +211,74 @@ func (r *Repository) GetByTripID(ctx context.Context, tripID uuid.UUID) (*entity
 
 	return &trip, nil
 }
+
+// GetForUpdateByID - получает поездку с блокировкой FOR UPDATE в новой транзакции
+func (r *TripRepository) GetForUpdateByID(
+	ctx context.Context,
+	id uuid.UUID,
+) (entity.Trip, error) {
+	var trip entity.Trip
+
+	// Используем storage.Tx для создания транзакции
+	_, err := storage.Tx(ctx, r.db, func(tx pgx.Tx) (*entity.Trip, error) {
+		// Получаем поездку с блокировкой
+		updated, err := r.GetForUpdateByIDWithTX(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		trip = updated
+		return &trip, nil
+	})
+
+	if err != nil {
+		return entity.Trip{}, err
+	}
+
+	return trip, nil
+}
+
+func (r *TripRepository) GetForUpdateByIDWithTX(
+	ctx context.Context,
+	tx RowQuerier,
+	id uuid.UUID,
+) (entity.Trip, error) {
+	var trip entity.Trip
+
+	query := `
+		SELECT
+			id,
+			driver_id,
+			from_point,
+			to_point,
+			departure_time,
+			seats,
+			status,
+			created_at
+		FROM trips
+		WHERE id = $1 FOR UPDATE
+	`
+	err := tx.QueryRow(ctx, query, id).Scan(
+		&trip.ID,
+		&trip.DriverID,
+		&trip.FromPoint,
+		&trip.ToPoint,
+		&trip.DepartureTime,
+		&trip.Seats,
+		&trip.Status,
+		&trip.CreatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.Trip{}, ErrTripNotFound
+		}
+		return entity.Trip{}, fmt.Errorf(
+			"failed to get trip by id for update: %w", err,
+		)
+	}
+
+	return trip, nil
+}
+
 
 
