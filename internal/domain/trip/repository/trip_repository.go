@@ -34,51 +34,29 @@ func NewPostgresRepository(db *pgxpool.Pool) *TripRepository {
 	return &TripRepository{db: db}
 }
 
+func (r *TripRepository) GetDB() *pgxpool.Pool {
+    return r.db
+}
+
 func (r *TripRepository) Create(ctx context.Context, trip *entity.Trip) error {
-    err := storage.TxWithoutResult(ctx, r.db, func(tx pgx.Tx) (error) {
-        // 1. Создаем поездку
-        if err := r.CreateTrip(ctx, tx, trip); err != nil {
-            return fmt.Errorf("failed to create trip: %w", err)
-        }
-
-        // 2. Создаем запись в истории
-        if err := r.CreateHistory(ctx, tx, trip.ID, nil, &trip.Status); err != nil {
-            return fmt.Errorf("failed to create history: %w", err)
-        }
-
-        return nil
-    })
-
-    return err
+    return r.CreateTx(ctx, r.db, trip)
 }
 
 func (r *TripRepository) Update(ctx context.Context, trip *entity.Trip, oldStatus entity.Status) (*entity.Trip, error) {
-    updatedTrip, err := storage.Tx(ctx, r.db, func(tx pgx.Tx) (*entity.Trip, error) {
-        if err := r.UpdateTrip(ctx, tx, trip); err != nil {
-            return nil, fmt.Errorf("failed to update trip: %w", err)
-        }
+    err := r.UpdateTx(ctx, r.db, trip)
+    if (err != nil) {
+        return nil, err
+    }
 
-        if err := r.CreateHistory(ctx, tx, trip.ID, &oldStatus, &trip.Status); err != nil {
-            return nil, fmt.Errorf("failed to create history: %w", err)
-        }
-
-        updated, err := r.GetByTripID(ctx, trip.ID)
-        if err != nil {
-            return nil, fmt.Errorf("failed to get updated trip: %w", err)
-        }
-
-        // 4. Возвращаем обновлённую поездку
-        return updated, nil
-    })
-
-    if err != nil {
+    updatedTrip, err := r.GetByTripID(ctx, trip.ID)
+    if (err != nil) {
         return nil, err
     }
 
     return updatedTrip, nil
 }
 
-func (r *TripRepository) CreateTrip(ctx context.Context, db Querier, trip *entity.Trip) error {
+func (r *TripRepository) CreateTx(ctx context.Context, db Querier, trip *entity.Trip) error {
 	const query = `
 		INSERT INTO public.trips (
 			id,
@@ -108,7 +86,7 @@ func (r *TripRepository) CreateTrip(ctx context.Context, db Querier, trip *entit
 	return err
 }
 
-func (r *TripRepository) UpdateTrip(ctx context.Context, db Querier, trip *entity.Trip) error {
+func (r *TripRepository) UpdateTx(ctx context.Context, db Querier, trip *entity.Trip) error {
     	const query = `
     		UPDATE public.trips
     		SET status = $1
@@ -125,7 +103,7 @@ func (r *TripRepository) UpdateTrip(ctx context.Context, db Querier, trip *entit
         return err
 }
 
-func (r *TripRepository) CreateHistory(
+func (r *TripRepository) CreateHistoryTx(
 	ctx context.Context,
 	db Querier,
 	tripID uuid.UUID,
