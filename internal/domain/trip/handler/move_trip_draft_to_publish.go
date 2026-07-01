@@ -32,14 +32,14 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 
 	trip, err := u.TripService.GetForUpdateByID(c.Context(), req.TripID)
 	if err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
+        return c.Status(fiber.StatusNotFound).JSON(response.NewMoveTripDraftToPublishErrorResponse(
             "Error get Trip",
             err.Error(),
         ))
 	}
 
 	if trip.DriverID != req.ClientID {
-        return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
+        return c.Status(fiber.StatusForbidden).JSON(response.NewMoveTripDraftToPublishErrorResponse(
             fmt.Sprintf("forbidden: client %s is not driver of trip %s", req.ClientID, req.TripID),
         ))
 	}

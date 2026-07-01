@@ -28,19 +28,50 @@ help:
 # Запуск всех тестов
 .PHONY: test
 test:
-	$(GO) test -v $(GO_PKG)
+	$(GO) test -v ./internal/...
 
-# Генерация отчёта о покрытии в формате HTML
-.PHONY: coverage cover
-coverage cover:
-	$(GO) test -coverprofile=coverage.out $(GO_PKG)
-	$(GO) tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: file://$(shell pwd)/coverage.html"
+# --- ПОКРЫТИЕ (ИСПРАВЛЕНО) ---
 
-# Вывод покрытия в терминал (опционально)
-.PHONY: cover-report
-cover-report:
-	$(GO) test -cover $(GO_PKG)
+# Генерация отчёта о покрытии
+.PHONY: coverage
+coverage:
+	@echo "Generating coverage..."
+	@mkdir -p reports
+	GOTOOLCHAIN=local go test -coverprofile=reports/coverage.out \
+		-coverpkg=./internal/... \
+		./internal/api_test/... \
+		./internal/domain/trip/...
+	@echo ""
+	@echo "Coverage summary:"
+	GOTOOLCHAIN=local go tool cover -func=reports/coverage.out | grep total
+
+# Открыть покрытие в браузере
+.PHONY: coverage-html
+coverage-html: coverage
+	GOTOOLCHAIN=local go tool cover -html=reports/coverage.out
+
+# Вывод покрытия в терминал (исправлено!)
+.PHONY: coverage-report
+coverage-report:
+	@echo "Running tests with coverage..."
+	GOTOOLCHAIN=local go test -coverprofile=reports/coverage.out \
+		-coverpkg=./internal/... \
+		./internal/api_test/... \
+		./internal/domain/trip/...
+	@echo ""
+	@echo "Coverage report:"
+	GOTOOLCHAIN=local go tool cover -func=reports/coverage.out
+
+# Только итоговый процент
+.PHONY: coverage-total
+coverage-total:
+	GOTOOLCHAIN=local go test -coverprofile=reports/coverage.out \
+		-coverpkg=./internal/... \
+		./internal/api_test/... \
+		./internal/domain/trip/...
+	GOTOOLCHAIN=local go tool cover -func=reports/coverage.out | grep total
+
+# --- ЛИНТЕР ---
 
 # Проверка кода с помощью golangci-lint
 .PHONY: lint
@@ -50,7 +81,7 @@ lint:
 		echo "   https://golangci-lint.run/usage/install/"; \
 		exit 1; \
 	fi
-	golangci-lint run
+	golangci-lint run ./...
 
 # Запуск всех проверок
 .PHONY: all
