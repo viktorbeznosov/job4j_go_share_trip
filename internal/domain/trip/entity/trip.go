@@ -12,7 +12,7 @@ type Status string
 const (
 	StatusDraft     Status = "draft"
 	StatusPublished Status = "published"
-	StatusMatched   Status = "canceled"
+	StatusCanceled   Status = "canceled"
 	StatusConfirmed Status = "completed"
 )
 

@@ -45,11 +45,11 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 	}
 
 	if trip.Status == entity.StatusPublished {
-        return c.Status(fiber.StatusOK).JSON(response.NewMoveTripDraftToPublishSuccessResponse(&trip))
+        return c.Status(fiber.StatusNoContent).JSON(response.NewMoveTripDraftToPublishSuccessResponse(&trip))
 	}
 
 	if trip.Status != entity.StatusDraft {
-        return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
+        return c.Status(fiber.StatusConflict).JSON(response.NewMoveTripDraftToPublishErrorResponse(
             fmt.Sprintf("invalid trip status: expected %s, got %s", entity.StatusDraft, trip.Status),
         ))
 	}
