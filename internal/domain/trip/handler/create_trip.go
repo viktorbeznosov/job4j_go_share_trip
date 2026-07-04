@@ -1,32 +1,41 @@
 package handler
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/handler/request"
 	"job4j_go_share_trip/internal/domain/trip/handler/response"
+	"job4j_go_share_trip/internal/observability/logctx"
 )
 
 func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
+    ctx := c.UserContext()
+
+    logger := logctx.Logger(ctx).With(
+        slog.String("server", "TripServer"),
+        slog.String("handler", "CreateTrip"),
+    )
+
 	var req request.CreateTripRequest
 
 	// 1. Парсим JSON
 	if err := c.BodyParser(&req); err != nil {
-		log.Printf("JSON parse error: %v", err)
+        logger.Warn(
+            "create trip failed: invalid json body",
+            slog.Any("error", err),
+        )
 		return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
 			"Invalid JSON body",
 			err.Error(),
 		))
 	}
 
-	log.Printf("Received request: %+v", req)
-
 	// 2. Валидируем запрос
 	if err := req.Validate(); err != nil {
-		log.Printf("Validation error: %v", err)
+		logger.Warn("Validation error", slog.Any("error", err))
 		return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
 			err.Error(),
 		))
@@ -35,11 +44,17 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 	// 3. Парсим дату
 	departureTime, err := req.ParseDepartureTime()
 	if err != nil {
-		log.Printf("Date parse error: %v", err)
+		logger.Warn("Date parse error", slog.Any("error", err))
 		return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
 			err.Error(),
 		))
 	}
+
+    logger = logger.With(
+        slog.String("client_id", req.DriverID.String()),
+    )
+
+    logctx.WithLogger(ctx, logger)
 
 	// 4. Создаем сущность
 	trip, err := entity.NewTrip(
@@ -50,7 +65,7 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 		req.Seats,
 	)
 	if err != nil {
-		log.Printf("Failed to create trip entity: %v", err)
+		logger.Warn("Failed to create trip entity", slog.Any("error", err))
 		return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
 			err.Error(),
 		))
@@ -58,11 +73,16 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 
 	// 5. Сохраняем в БД
 	if err := h.TripService.Create(c.Context(), trip); err != nil {
-		log.Printf("Failed to save trip: %v", err)
+		logger.Warn("Failed to save trip", slog.Any("error", err))
 		return c.Status(fiber.StatusInternalServerError).JSON(response.NewErrorResponse(
 			"Failed to create trip",
 		))
 	}
+
+	logger.Info(
+		"create trip completed",
+		slog.String("trip_id", trip.ID.String()),
+	)
 
 	// 6. Успешный ответ с ItemResponse
 	return c.Status(fiber.StatusCreated).JSON(response.NewSuccessResponse(trip))

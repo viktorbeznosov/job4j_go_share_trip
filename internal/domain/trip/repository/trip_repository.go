@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
+	"job4j_go_share_trip/internal/observability/logctx"
 	"job4j_go_share_trip/internal/storage"
 )
 
@@ -57,6 +59,16 @@ func (r *TripRepository) Update(ctx context.Context, trip *entity.Trip, oldStatu
 }
 
 func (r *TripRepository) CreateTx(ctx context.Context, db Querier, trip *entity.Trip) error {
+	logger := logctx.Logger(ctx).With(
+		slog.String("layer", "repository"),
+		slog.String("repository", "TripRepository"),
+		slog.String("operation", "Create"),
+		slog.String("trip_id", trip.ID.String()),
+		slog.String("client_id", trip.DriverID.String()),
+	)
+
+    logger.Info("insert trip started")
+
 	const query = `
 		INSERT INTO public.trips (
 			id,
@@ -83,24 +95,54 @@ func (r *TripRepository) CreateTx(ctx context.Context, db Querier, trip *entity.
 		trip.CreatedAt,
 	)
 
-	return err
+	if err != nil {
+		logger.Error(
+			"insert trip failed",
+			slog.Any("error", err),
+		)
+		return fmt.Errorf("tx.Exec create trip: %w", err)
+	}
+
+	logger.Info("insert trip completed")
+
+	return nil
 }
 
 func (r *TripRepository) UpdateTx(ctx context.Context, db Querier, trip *entity.Trip) error {
-    	const query = `
-    		UPDATE public.trips
-    		SET status = $1
-    		WHERE id = $2
-    	`
+	logger := logctx.Logger(ctx).With(
+		slog.String("layer", "repository"),
+		slog.String("repository", "TripRepository"),
+		slog.String("operation", "Update"),
+		slog.String("trip_id", trip.ID.String()),
+		slog.String("client_id", trip.DriverID.String()),
+	)
 
-    	_, err := db.Exec(
-            ctx,
-            query,
-            trip.Status,
-            trip.ID,
-    	)
+    logger.Info("update trip started")
 
-        return err
+    const query = `
+        UPDATE public.trips
+        SET status = $1
+        WHERE id = $2
+    `
+
+    _, err := db.Exec(
+        ctx,
+        query,
+        trip.Status,
+        trip.ID,
+    )
+
+	if err != nil {
+		logger.Error(
+			"update trip failed",
+			slog.Any("error", err),
+		)
+		return fmt.Errorf("tx.Exec update trip: %w", err)
+	}
+
+	logger.Info("update trip completed")
+
+    return nil
 }
 
 func (r *TripRepository) CreateHistoryTx(
@@ -110,6 +152,17 @@ func (r *TripRepository) CreateHistoryTx(
 	fromStatus *entity.Status,
 	toStatus *entity.Status,
 ) error {
+	logger := logctx.Logger(ctx).With(
+		slog.String("layer", "repository"),
+		slog.String("repository", "TripRepository"),
+		slog.String("operation", "Update"),
+		slog.String("trip_id", string(tripID.String())),
+		slog.String("from_status", string(*fromStatus)),
+		slog.String("to_status", string(*toStatus)),
+	)
+
+    logger.Info("history create started")
+
 	if tripID == uuid.Nil {
 		return errors.New("trip_id is required")
 	}
@@ -152,7 +205,18 @@ func (r *TripRepository) CreateHistoryTx(
 	log.Println(builder.String())
 
 	_, err := db.Exec(ctx, builder.String(), args...)
-	return err
+
+    if err != nil {
+        logger.Error(
+            "save trip history failed",
+            slog.Any("error", err),
+        )
+        return fmt.Errorf("tx.Exec update trip: %w", err)
+    }
+
+    logger.Info("save trip history completed")
+
+	return nil
 }
 
 func (r *TripRepository) GetByTripID(ctx context.Context, tripID uuid.UUID) (*entity.Trip, error) {

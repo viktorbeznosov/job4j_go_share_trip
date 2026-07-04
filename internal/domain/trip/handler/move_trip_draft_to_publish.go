@@ -5,17 +5,28 @@ import (
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/handler/request"
 	"job4j_go_share_trip/internal/domain/trip/handler/response"
-	"log"
+	"job4j_go_share_trip/internal/observability/logctx"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
+    ctx := c.UserContext()
+
+    logger := logctx.Logger(ctx).With(
+        slog.String("server", "TripServer"),
+        slog.String("handler", "CreateTrip"),
+    )
+
     var req request.MoveTripDraftToPublishModelRequest
 
 	// 1. Парсим JSON
 	if err := c.BodyParser(&req); err != nil {
-		log.Printf("JSON parse error: %v", err)
+        logger.Warn(
+            "JSON parse error",
+            slog.Any("error", err),
+        )
 		return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
 			"Invalid JSON body",
 			err.Error(),
@@ -24,7 +35,10 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 
 	// 2. Валидируем запрос
 	if err := req.Validate(); err != nil {
-		log.Printf("Validation error: %v", err)
+        logger.Warn(
+            "Validation error",
+            slog.Any("error", err),
+        )
 		return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
 			err.Error(),
 		))
@@ -32,6 +46,10 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 
 	trip, err := u.TripService.GetForUpdateByID(c.Context(), req.TripID)
 	if err != nil {
+        logger.Warn(
+            "Error get Trip",
+            slog.Any("error", err),
+        )
         return c.Status(fiber.StatusNotFound).JSON(response.NewMoveTripDraftToPublishErrorResponse(
             "Error get Trip",
             err.Error(),
@@ -39,6 +57,10 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 	}
 
 	if trip.DriverID != req.ClientID {
+        logger.Warn(
+            fmt.Sprintf("forbidden: client %s is not driver of trip %s", req.ClientID, req.TripID),
+            slog.Any("error", err),
+        )
         return c.Status(fiber.StatusForbidden).JSON(response.NewMoveTripDraftToPublishErrorResponse(
             fmt.Sprintf("forbidden: client %s is not driver of trip %s", req.ClientID, req.TripID),
         ))
@@ -59,6 +81,10 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 
 	updatedTrip, err := u.TripService.Update(c.Context(), &trip, oldStatus)
 	if err != nil {
+        logger.Warn(
+            "Failed to update trip",
+            slog.Any("error", err),
+        )
         return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
             "Failed to update trip",
             err.Error(),

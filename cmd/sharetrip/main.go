@@ -6,6 +6,8 @@ import (
 
 	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/api"
+	"job4j_go_share_trip/internal/app"
+	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/storage"
 
 	"github.com/gofiber/fiber/v2"
@@ -29,6 +31,16 @@ func main() {
 		SSLMode:  config.Env("DB_SSLMODE", "disable"),
 	}
 
+    logger, logFile, err := app.NewLogger()
+    if err != nil {
+        panic(err)
+    }
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			log.Printf("failed to close log file: %v", err)
+		}
+	}()
+
 	pool, err := storage.NewPool(ctx, cfg.DSN())
 	if err != nil {
 		log.Fatal(err)
@@ -38,6 +50,9 @@ func main() {
 	server := api.NewServer(pool)
 
 	app := fiber.New()
+
+	app.Use(middleware.Correlation(logger))
+
 	server.Route(app.Group("/api"))
 
 	err = app.Listen(":8080")
