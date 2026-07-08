@@ -45,7 +45,20 @@ services:
       - ../logs:/var/log/myapp:ro
     depends_on:
       - loki
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
 volumes:
   pgdata:
   loki_data:
   grafana_data:
+  prometheus_data:

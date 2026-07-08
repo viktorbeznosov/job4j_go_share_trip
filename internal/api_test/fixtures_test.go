@@ -6,9 +6,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/repository"
+	"job4j_go_share_trip/internal/observability/metrics"
 )
 
 // TestData содержит тестовые данные для использования в тестах
@@ -18,9 +20,16 @@ type TestData struct {
 	Trip     *entity.Trip
 }
 
+// getTestMetrics создаёт тестовые метрики (пустой реестр)
+func getTestMetrics() *metrics.Metrics {
+	registry := prometheus.NewRegistry()
+	return metrics.New(registry)
+}
+
 // CreateTestTrip создаёт тестовую поездку в БД
 func CreateTestTrip(ctx context.Context, pool *pgxpool.Pool, driverID uuid.UUID) (*TestData, error) {
-	tripRepo := repository.NewPostgresRepository(pool)
+	m := getTestMetrics()
+	tripRepo := repository.NewPostgresRepository(pool, m)
 
 	trip := &entity.Trip{
 		ID:            uuid.New(),
@@ -60,7 +69,8 @@ func CreateTestTripWithStatus(
 	// Если нужен Published статус - обновляем
 	if status == entity.StatusPublished {
 		data.Trip.Status = status
-		tripRepo := repository.NewPostgresRepository(pool)
+		m := getTestMetrics()
+		tripRepo := repository.NewPostgresRepository(pool, m)
 
 		// Обновляем статус в БД
 		err := tripRepo.UpdateTx(ctx, pool, data.Trip)

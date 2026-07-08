@@ -8,10 +8,12 @@ import (
 	"job4j_go_share_trip/internal/api"
 	"job4j_go_share_trip/internal/app"
 	"job4j_go_share_trip/internal/middleware"
+	"job4j_go_share_trip/internal/observability/metrics"
 	"job4j_go_share_trip/internal/storage"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func main() {
@@ -47,11 +49,15 @@ func main() {
 	}
 	defer pool.Close()
 
-	server := api.NewServer(pool)
+    registry := prometheus.NewRegistry()
+    m := metrics.New(registry)
+
+	server := api.NewServer(pool, registry, m)
 
 	app := fiber.New()
 
 	app.Use(middleware.Correlation(logger))
+	app.Use(middleware.NewHTTPMetricsMiddleware(m))
 
 	server.Route(app.Group("/api"))
 

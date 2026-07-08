@@ -13,6 +13,7 @@ import (
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/repository"
 	"job4j_go_share_trip/internal/observability/logctx"
+	"job4j_go_share_trip/internal/observability/metrics"
 	"job4j_go_share_trip/internal/shared/outbox"
 	"job4j_go_share_trip/internal/storage"
 )
@@ -20,19 +21,31 @@ import (
 type TripService struct {
 	tripRepository repository.TripRepository
 	eventRepository outbox.EventRepository
+	metrics *metrics.Metrics
 }
 
 func NewService(
     tripRepository repository.TripRepository,
     eventRepository outbox.EventRepository,
+    metrics *metrics.Metrics,
 ) *TripService {
 	return &TripService{
 		tripRepository: tripRepository,
 		eventRepository: eventRepository,
+		metrics: metrics,
 	}
 }
 
 func (s *TripService) Create(ctx context.Context, trip *entity.Trip) error {
+	started := time.Now()
+	result := "success"
+
+	defer func() {
+		s.metrics.TripCreateTotal.WithLabelValues(result).Inc()
+		s.metrics.TripCreateDuration.WithLabelValues(result).
+			Observe(time.Since(started).Seconds())
+	}()
+
 	logger := logctx.Logger(ctx).With(
 		slog.String("service", "TripService"),
 		slog.String("operation", "CreateTrip"),
@@ -95,6 +108,15 @@ func (s *TripService) Create(ctx context.Context, trip *entity.Trip) error {
 }
 
 func (s *TripService) Update(ctx context.Context, trip *entity.Trip, oldStatus entity.Status) (*entity.Trip, error) {
+	started := time.Now()
+	result := "success"
+
+	defer func() {
+		s.metrics.TripPublishTotal.WithLabelValues(result).Inc()
+		s.metrics.TripPublishDuration.WithLabelValues(result).
+			Observe(time.Since(started).Seconds())
+	}()
+
     uow := storage.NewUnitOfWork(s.tripRepository.GetDB())
 
 	logger := logctx.Logger(ctx).With(

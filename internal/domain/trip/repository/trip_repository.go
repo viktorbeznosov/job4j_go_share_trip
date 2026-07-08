@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -15,6 +15,7 @@ import (
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/observability/logctx"
+	"job4j_go_share_trip/internal/observability/metrics"
 	"job4j_go_share_trip/internal/storage"
 )
 
@@ -30,10 +31,14 @@ type RowQuerier interface {
 
 type TripRepository struct {
 	db *pgxpool.Pool
+	metrics *metrics.Metrics
 }
 
-func NewPostgresRepository(db *pgxpool.Pool) *TripRepository {
-	return &TripRepository{db: db}
+func NewPostgresRepository(db *pgxpool.Pool, metrics *metrics.Metrics,) *TripRepository {
+	return &TripRepository{
+	    db: db,
+	    metrics: metrics,
+	}
 }
 
 func (r *TripRepository) GetDB() *pgxpool.Pool {
@@ -59,6 +64,21 @@ func (r *TripRepository) Update(ctx context.Context, trip *entity.Trip, oldStatu
 }
 
 func (r *TripRepository) CreateTx(ctx context.Context, db Querier, trip *entity.Trip) error {
+	started := time.Now()
+	result := "success"
+
+	defer func() {
+		r.metrics.RepositoryQueryTotal.WithLabelValues(
+			"trip_create",
+			result,
+		).Inc()
+
+		r.metrics.RepositoryQueryDuration.WithLabelValues(
+			"trip_create",
+			result,
+		).Observe(time.Since(started).Seconds())
+	}()
+
 	logger := logctx.Logger(ctx).With(
 		slog.String("layer", "repository"),
 		slog.String("repository", "TripRepository"),
@@ -109,6 +129,21 @@ func (r *TripRepository) CreateTx(ctx context.Context, db Querier, trip *entity.
 }
 
 func (r *TripRepository) UpdateTx(ctx context.Context, db Querier, trip *entity.Trip) error {
+	started := time.Now()
+	result := "success"
+
+	defer func() {
+		r.metrics.RepositoryQueryTotal.WithLabelValues(
+			"trip_update",
+			result,
+		).Inc()
+
+		r.metrics.RepositoryQueryDuration.WithLabelValues(
+			"trip_update",
+			result,
+		).Observe(time.Since(started).Seconds())
+	}()
+
 	logger := logctx.Logger(ctx).With(
 		slog.String("layer", "repository"),
 		slog.String("repository", "TripRepository"),
@@ -152,16 +187,32 @@ func (r *TripRepository) CreateHistoryTx(
 	fromStatus *entity.Status,
 	toStatus *entity.Status,
 ) error {
-	logger := logctx.Logger(ctx).With(
+	// ✅ Безопасно получаем логгер
+	logger := logctx.Logger(ctx)
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	// ✅ Безопасно получаем строки из статусов
+	fromStatusStr := ""
+	if fromStatus != nil {
+		fromStatusStr = string(*fromStatus)
+	}
+	toStatusStr := ""
+	if toStatus != nil {
+		toStatusStr = string(*toStatus)
+	}
+
+	logger = logger.With(
 		slog.String("layer", "repository"),
 		slog.String("repository", "TripRepository"),
-		slog.String("operation", "Update"),
-		slog.String("trip_id", string(tripID.String())),
-		slog.String("from_status", string(*fromStatus)),
-		slog.String("to_status", string(*toStatus)),
+		slog.String("operation", "CreateHistory"),
+		slog.String("trip_id", tripID.String()),
+		slog.String("from_status", fromStatusStr),
+		slog.String("to_status", toStatusStr),
 	)
 
-    logger.Info("history create started")
+	logger.Info("history create started")
 
 	if tripID == uuid.Nil {
 		return errors.New("trip_id is required")
@@ -202,20 +253,18 @@ func (r *TripRepository) CreateHistoryTx(
 	builder.WriteString(strings.Join(placeholders, ", "))
 	builder.WriteString(")")
 
-	log.Println(builder.String())
+	logger.Debug("history query", slog.String("query", builder.String()))
 
 	_, err := db.Exec(ctx, builder.String(), args...)
+	if err != nil {
+		logger.Error(
+			"save trip history failed",
+			slog.Any("error", err),
+		)
+		return fmt.Errorf("tx.Exec create history: %w", err)
+	}
 
-    if err != nil {
-        logger.Error(
-            "save trip history failed",
-            slog.Any("error", err),
-        )
-        return fmt.Errorf("tx.Exec update trip: %w", err)
-    }
-
-    logger.Info("save trip history completed")
-
+	logger.Info("save trip history completed")
 	return nil
 }
 

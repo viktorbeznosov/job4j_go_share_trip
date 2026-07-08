@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"job4j_go_share_trip/internal/api"
+	"job4j_go_share_trip/internal/observability/metrics"
 	"log"
 	"os"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -29,6 +31,7 @@ func TestMain(m *testing.M) {
 
 	var err error
 
+	// 1. Поднимаем PostgreSQL в Docker
 	testContainer, err = postgres.Run(
 		testCtx,
 		"postgres:16",
@@ -40,6 +43,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("start postgres container: %v", err)
 	}
 
+	// 2. Получаем DSN
 	dsn, err := testContainer.ConnectionString(
 		testCtx,
 		"sslmode=disable",
@@ -48,6 +52,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("get connection string: %v", err)
 	}
 
+	// 3. Создаём SQL подключение для миграций
 	testDB, err = sql.Open("pgx", dsn)
 	if err != nil {
 		log.Fatalf("open sql db: %v", err)
@@ -55,6 +60,7 @@ func TestMain(m *testing.M) {
 
 	waitReady(testDB)
 
+	// 4. Накатываем миграции
 	if err = goose.SetDialect("postgres"); err != nil {
 		log.Fatalf("set goose dialect: %v", err)
 	}
@@ -63,18 +69,27 @@ func TestMain(m *testing.M) {
 		log.Fatalf("run migrations: %v", err)
 	}
 
+	// 5. Создаём пул подключений
 	testPool, err = pgxpool.New(testCtx, dsn)
 	if err != nil {
 		log.Fatalf("create pgx pool: %v", err)
 	}
 
-	server := api.NewServer(testPool)
+	// 6. ✅ Создаём registry и метрики для тестов
+	registry := prometheus.NewRegistry()
+	metrix := metrics.New(registry)
 
+	// 7. ✅ Создаём сервер с метриками
+	server := api.NewServer(testPool, registry, metrix)
+
+	// 8. Настраиваем Fiber
 	testApp = fiber.New()
 	server.Route(testApp.Group(""))
 
+	// 9. Запускаем тесты
 	code := m.Run()
 
+	// 10. Cleanup
 	if testPool != nil {
 		testPool.Close()
 	}
