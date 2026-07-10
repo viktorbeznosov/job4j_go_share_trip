@@ -83,6 +83,9 @@ lint:
 	fi
 	golangci-lint run ./...
 
+tidy:
+	go mod tidy
+
 # Запуск всех проверок
 .PHONY: all
 all: lint test coverage

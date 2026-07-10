@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/observability/logctx"
@@ -129,6 +130,11 @@ func (r *TripRepository) CreateTx(ctx context.Context, db Querier, trip *entity.
 }
 
 func (r *TripRepository) UpdateTx(ctx context.Context, db Querier, trip *entity.Trip) error {
+	tracer := otel.Tracer("TripRepository")
+
+	_, span := tracer.Start(ctx, "TripRepository.UpdateTx")
+	defer span.End()
+
 	started := time.Now()
 	result := "success"
 
@@ -269,6 +275,11 @@ func (r *TripRepository) CreateHistoryTx(
 }
 
 func (r *TripRepository) GetByTripID(ctx context.Context, tripID uuid.UUID) (*entity.Trip, error) {
+	tracer := otel.Tracer("TripRepository")
+
+	_, span := tracer.Start(ctx, "TripRepository.GetByID")
+	defer span.End()
+
 	const query = `
 		SELECT
 			id,

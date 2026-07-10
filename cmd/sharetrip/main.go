@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"time"
 
 	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/api"
 	"job4j_go_share_trip/internal/app"
 	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/metrics"
+	"job4j_go_share_trip/internal/observability/tracing"
 	"job4j_go_share_trip/internal/storage"
 
 	"github.com/gofiber/fiber/v2"
@@ -42,6 +45,29 @@ func main() {
 			log.Printf("failed to close log file: %v", err)
 		}
 	}()
+
+    tp, err := tracing.NewProvider(ctx, tracing.Config{
+        ServiceName:    "share-trip",
+        ServiceVersion: "1.0.0",
+        Environment:    "local",
+        Endpoint:       "localhost:4319",
+    })
+    if err != nil {
+        logger.Error("init tracing failed", "error", err)
+        os.Exit(1)
+    }
+
+    defer func() {
+        shutdownCtx, cancel := context.WithTimeout(
+            context.Background(),
+            5 * time.Second,
+        )
+        defer cancel()
+
+        if err := tp.Shutdown(shutdownCtx); err != nil {
+            logger.Error("shutdown tracing failed", "error", err)
+        }
+    }()
 
 	pool, err := storage.NewPool(ctx, cfg.DSN())
 	if err != nil {

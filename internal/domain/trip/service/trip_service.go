@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/repository"
@@ -108,6 +109,9 @@ func (s *TripService) Create(ctx context.Context, trip *entity.Trip) error {
 }
 
 func (s *TripService) Update(ctx context.Context, trip *entity.Trip, oldStatus entity.Status) (*entity.Trip, error) {
+	ctx, span := otel.Tracer("TripService").Start(ctx, "TripService.Update")
+	defer span.End()
+
 	started := time.Now()
 	result := "success"
 
@@ -183,6 +187,9 @@ func (s *TripService) Update(ctx context.Context, trip *entity.Trip, oldStatus e
 }
 
 func (s *TripService) GetByTripID(ctx context.Context, tripID uuid.UUID) (*entity.Trip, error) {
+	ctx, span := otel.Tracer("TripService").Start(ctx, "TripService.GetByTripID")
+	defer span.End()
+
 	return s.tripRepository.GetByTripID(ctx, tripID)
 }
 

@@ -9,6 +9,8 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
@@ -20,6 +22,11 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
     )
 
     var req request.MoveTripDraftToPublishModelRequest
+
+    tracer := otel.Tracer("trip-api")
+
+    _, span := tracer.Start(c.UserContext(), "MoveTripDraftToPublish")
+    defer span.End()
 
 	// 1. Парсим JSON
 	if err := c.BodyParser(&req); err != nil {
@@ -90,6 +97,12 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
             err.Error(),
         ))
 	}
+
+	span.SetAttributes(
+		attribute.String("trip_id", trip.ID.String()),
+		attribute.String("client_id", trip.DriverID.String()),
+		attribute.String("status", string(trip.Status)),
+	)
 
     return c.Status(fiber.StatusOK).JSON(response.NewMoveTripDraftToPublishSuccessResponse(updatedTrip))
 }
