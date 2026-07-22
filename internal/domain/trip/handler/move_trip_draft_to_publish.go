@@ -2,39 +2,34 @@ package handler
 
 import (
 	"fmt"
-	"job4j_go_share_trip/internal/domain/trip/entity"
-	"job4j_go_share_trip/internal/domain/trip/handler/request"
-	"job4j_go_share_trip/internal/domain/trip/handler/response"
-	"job4j_go_share_trip/internal/observability/logctx"
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+
+	"job4j_go_share_trip/internal/domain/trip/entity"
+	"job4j_go_share_trip/internal/domain/trip/handler/request"
+	"job4j_go_share_trip/internal/domain/trip/handler/response"
+	"job4j_go_share_trip/internal/observability/logctx"
 )
 
-func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
-    ctx := c.UserContext()
+func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
+	ctx := c.UserContext()
 
-    logger := logctx.Logger(ctx).With(
-        slog.String("server", "TripServer"),
-        slog.String("handler", "CreateTrip"),
-    )
+	logger := logctx.Logger(ctx).With(
+		slog.String("handler", "MoveTripDraftToPublish"),
+	)
 
-    var req request.MoveTripDraftToPublishModelRequest
+	tracer := otel.Tracer("trip-api")
+	_, span := tracer.Start(ctx, "MoveTripDraftToPublish")
+	defer span.End()
 
-    tracer := otel.Tracer("trip-api")
-
-    _, span := tracer.Start(c.UserContext(), "MoveTripDraftToPublish")
-    defer span.End()
+	var req request.MoveTripDraftToPublishModelRequest
 
 	// 1. Парсим JSON
 	if err := c.BodyParser(&req); err != nil {
-        logger.Warn(
-            "JSON parse error",
-            slog.Any("error", err),
-        )
-		return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
+		return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
 			"Invalid JSON body",
 			err.Error(),
 		))
@@ -42,60 +37,54 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 
 	// 2. Валидируем запрос
 	if err := req.Validate(); err != nil {
-        logger.Warn(
-            "Validation error",
-            slog.Any("error", err),
-        )
-		return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
+		return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
 			err.Error(),
 		))
 	}
 
-	trip, err := u.TripService.GetForUpdateByID(c.Context(), req.TripID)
+	trip, err := h.TripService.GetForUpdateByID(ctx, req.TripID)
 	if err != nil {
-        logger.Warn(
-            "Error get Trip",
-            slog.Any("error", err),
-        )
-        return c.Status(fiber.StatusNotFound).JSON(response.NewMoveTripDraftToPublishErrorResponse(
-            "Error get Trip",
-            err.Error(),
-        ))
+		logger.Warn("Error get Trip", slog.Any("error", err))
+		return c.Status(fiber.StatusNotFound).JSON(response.NewErrorResponse(
+			"Trip not found",
+			err.Error(),
+		))
 	}
 
+	// Проверка прав
 	if trip.DriverID != req.ClientID {
-        logger.Warn(
-            fmt.Sprintf("forbidden: client %s is not driver of trip %s", req.ClientID, req.TripID),
-            slog.Any("error", err),
-        )
-        return c.Status(fiber.StatusForbidden).JSON(response.NewMoveTripDraftToPublishErrorResponse(
-            fmt.Sprintf("forbidden: client %s is not driver of trip %s", req.ClientID, req.TripID),
-        ))
+		logger.Warn("Forbidden: client is not driver",
+			slog.String("client_id", req.ClientID.String()),
+			slog.String("driver_id", trip.DriverID.String()),
+		)
+		return c.Status(fiber.StatusForbidden).JSON(response.NewErrorResponse(
+			fmt.Sprintf("client %s is not driver of trip %s", req.ClientID, req.TripID),
+		))
 	}
 
+	// Проверка статуса
 	if trip.Status == entity.StatusPublished {
-        return c.Status(fiber.StatusNoContent).JSON(response.NewMoveTripDraftToPublishSuccessResponse(&trip))
+		return c.Status(fiber.StatusNoContent).JSON(response.NewSuccessResponse(
+			response.NewMoveTripDraftToPublishResponse(&trip),
+		))
 	}
 
 	if trip.Status != entity.StatusDraft {
-        return c.Status(fiber.StatusConflict).JSON(response.NewMoveTripDraftToPublishErrorResponse(
-            fmt.Sprintf("invalid trip status: expected %s, got %s", entity.StatusDraft, trip.Status),
-        ))
+		return c.Status(fiber.StatusConflict).JSON(response.NewErrorResponse(
+			fmt.Sprintf("invalid trip status: expected %s, got %s", entity.StatusDraft, trip.Status),
+		))
 	}
 
-    oldStatus := trip.Status
+	// Обновляем
+	oldStatus := trip.Status
 	trip.Status = entity.StatusPublished
 
-	updatedTrip, err := u.TripService.Update(c.Context(), &trip, oldStatus)
+	updatedTrip, err := h.TripService.Update(ctx, &trip, oldStatus)
 	if err != nil {
-        logger.Warn(
-            "Failed to update trip",
-            slog.Any("error", err),
-        )
-        return c.Status(fiber.StatusBadRequest).JSON(response.NewMoveTripDraftToPublishErrorResponse(
-            "Failed to update trip",
-            err.Error(),
-        ))
+		logger.Warn("Failed to update trip", slog.Any("error", err))
+		return c.Status(fiber.StatusInternalServerError).JSON(response.NewErrorResponse(
+			"Failed to update trip",
+		))
 	}
 
 	span.SetAttributes(
@@ -104,8 +93,10 @@ func (u *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		attribute.String("status", string(trip.Status)),
 	)
 
-    return c.Status(fiber.StatusOK).JSON(response.NewMoveTripDraftToPublishSuccessResponse(updatedTrip))
+	logger.Info("trip published successfully", slog.String("trip_id", trip.ID.String()))
+
+	// ✅ Упрощенный ответ
+	return c.Status(fiber.StatusOK).JSON(response.NewSuccessResponse(
+		response.NewMoveTripDraftToPublishResponse(updatedTrip),
+	))
 }
-
-
-

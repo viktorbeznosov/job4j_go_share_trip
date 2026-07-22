@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"job4j_go_share_trip/internal/validators"
 )
 
 var (
@@ -33,7 +35,7 @@ func (r *CreateTripRequest) Validate() error {
 	if r.DriverID == uuid.Nil {
 		return ErrDriverIDRequired
 	}
-	if r.DriverID.String() == "00000000-0000-0000-0000-000000000000" {
+	if !validators.IsValidUUID(r.DriverID.String()) {
 		return ErrInvalidDriverID
 	}
 

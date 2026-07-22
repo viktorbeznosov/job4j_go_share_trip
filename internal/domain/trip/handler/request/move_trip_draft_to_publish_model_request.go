@@ -2,6 +2,7 @@ package request
 
 import (
 	"errors"
+	"job4j_go_share_trip/internal/validators"
 
 	"github.com/google/uuid"
 )
@@ -24,7 +25,8 @@ func (r *MoveTripDraftToPublishModelRequest) Validate() error {
 	if r.TripID == uuid.Nil {
 		return ErrTripIDRequired
 	}
-	if r.TripID.String() == "00000000-0000-0000-0000-000000000000" {
+
+	if !validators.IsValidUUID(r.TripID.String()) {
 		return ErrInvalidTripID
 	}
 
@@ -32,7 +34,7 @@ func (r *MoveTripDraftToPublishModelRequest) Validate() error {
 	if r.ClientID == uuid.Nil {
 		return ErrClientIDRequired
 	}
-	if r.ClientID.String() == "00000000-0000-0000-0000-000000000000" {
+	if !validators.IsValidUUID(r.ClientID.String()) {
 		return ErrInvalidClientID
 	}
 
