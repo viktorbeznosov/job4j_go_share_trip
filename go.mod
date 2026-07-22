@@ -1,6 +1,6 @@
 module job4j_go_share_trip
 
-go 1.25.7
+go 1.25.5
 
 require (
 	github.com/gofiber/contrib/otelfiber/v2 v2.2.3
