@@ -12,7 +12,7 @@ DB_SSLMODE ?= disable
 DB_DSN = user=$(DB_USER) password=$(DB_PASSWORD) dbname=$(DB_NAME) host=$(DB_HOST) port=$(DB_PORT) sslmode=$(DB_SSLMODE)
 
 run:
-	go run cmd/sharetrip/main.go
+	go1.25.5 run cmd/sharetrip/main.go
 
 # Цель по умолчанию
 .PHONY: help
@@ -84,7 +84,7 @@ lint:
 	golangci-lint run ./...
 
 tidy:
-	go mod tidy
+	go1.25.5 mod tidy
 
 # Запуск всех проверок
 .PHONY: all
