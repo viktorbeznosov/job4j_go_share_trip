@@ -4,10 +4,12 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/handler/request"
 	"job4j_go_share_trip/internal/domain/trip/handler/response"
+	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/logctx"
 )
 
@@ -43,12 +45,28 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 		))
 	}
 
-	logger = logger.With(slog.String("client_id", req.DriverID.String()))
+    claims, err := middleware.ClaimsFromContext(c)
+    if (err != nil) {
+        logger.Error("Error get claims", slog.Any("error", err))
+        return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
+            err.Error(),
+        ))
+    }
+
+    driverUUID, err := uuid.Parse(claims.Subject)
+    if err != nil {
+        logger.Error("Error get driverId", slog.Any("error", err))
+        return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
+            err.Error(),
+        ))
+    }
+
+	logger = logger.With(slog.String("client_id", driverUUID.String()))
 	ctx = logctx.WithLogger(ctx, logger)
 
 	// 4. Создаем сущность
 	trip, err := entity.NewTrip(
-		req.DriverID,
+		driverUUID,
 		req.FromPoint,
 		req.ToPoint,
 		departureTime,

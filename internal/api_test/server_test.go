@@ -3,10 +3,14 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"job4j_go_share_trip/internal/api"
+	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/metrics"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +35,6 @@ func TestMain(m *testing.M) {
 
 	var err error
 
-	// 1. Поднимаем PostgreSQL в Docker
 	testContainer, err = postgres.Run(
 		testCtx,
 		"postgres:16",
@@ -43,7 +46,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("start postgres container: %v", err)
 	}
 
-	// 2. Получаем DSN
 	dsn, err := testContainer.ConnectionString(
 		testCtx,
 		"sslmode=disable",
@@ -52,7 +54,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("get connection string: %v", err)
 	}
 
-	// 3. Создаём SQL подключение для миграций
 	testDB, err = sql.Open("pgx", dsn)
 	if err != nil {
 		log.Fatalf("open sql db: %v", err)
@@ -60,7 +61,6 @@ func TestMain(m *testing.M) {
 
 	waitReady(testDB)
 
-	// 4. Накатываем миграции
 	if err = goose.SetDialect("postgres"); err != nil {
 		log.Fatalf("set goose dialect: %v", err)
 	}
@@ -69,27 +69,75 @@ func TestMain(m *testing.M) {
 		log.Fatalf("run migrations: %v", err)
 	}
 
-	// 5. Создаём пул подключений
 	testPool, err = pgxpool.New(testCtx, dsn)
 	if err != nil {
 		log.Fatalf("create pgx pool: %v", err)
 	}
 
-	// 6. ✅ Создаём registry и метрики для тестов
 	registry := prometheus.NewRegistry()
 	metrix := metrics.New(registry)
 
-	// 7. ✅ Создаём сервер с метриками
 	server := api.NewServer(testPool, registry, metrix)
 
-	// 8. Настраиваем Fiber
 	testApp = fiber.New()
+
+	// ✅ Исправленный мок: парсит Subject из токена
+	testApp.Use(func(c *fiber.Ctx) error {
+		token := c.Get("X-Refresh-Token")
+		if token == "" {
+			return c.Next()
+		}
+
+		// Парсим токен, чтобы получить Subject
+		parts := strings.Split(token, ".")
+		if len(parts) != 3 {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid token",
+			})
+		}
+
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid token payload",
+			})
+		}
+
+		var claimsMap map[string]interface{}
+		if err := json.Unmarshal(payload, &claimsMap); err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid token claims",
+			})
+		}
+
+		subject, ok := claimsMap["sub"].(string)
+		if !ok || subject == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "missing subject in token",
+			})
+		}
+
+		// Создаём claims с Subject из токена
+		claims := &middleware.KeycloakClaims{
+			Subject:           subject,
+			PreferredUsername: "testuser",
+			Email:             "test@example.com",
+			ResourceAccess: map[string]struct {
+				Roles []string `json:"roles"`
+			}{
+				"sharetrip-api": {
+					Roles: []string{"client"},
+				},
+			},
+		}
+		c.Locals(middleware.KeycloakClaimsKey, claims)
+		return c.Next()
+	})
+
 	server.Route(testApp.Group(""))
 
-	// 9. Запускаем тесты
 	code := m.Run()
 
-	// 10. Cleanup
 	if testPool != nil {
 		testPool.Close()
 	}

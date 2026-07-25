@@ -14,6 +14,7 @@ import (
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/handler/request"
 	"job4j_go_share_trip/internal/domain/trip/repository"
+	testutils "job4j_go_share_trip/internal/test_utils"
 )
 
 func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
@@ -32,10 +33,9 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 			}
 		}()
 
-		// 2. Формируем запрос
+		// 2. Формируем запрос (ClientID теперь в токене)
 		payload := request.MoveTripDraftToPublishModelRequest{
-			TripID:   testData.TripID,
-			ClientID: driverID,
+			TripID: testData.TripID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -48,6 +48,14 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 		)
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
+
+		// ✅ Добавляем токен с правильным driverID
+		token := testutils.GenerateTestToken(
+			driverID.String(),
+			"testuser",
+			"test@example.com",
+		)
+		req.Header.Set("X-Refresh-Token", token)
 
 		// 3. Выполняем запрос
 		resp, err := testApp.Test(req, -1)
@@ -87,11 +95,10 @@ func TestMoveTripFromDraftToPublished_DriverNotMatch(t *testing.T) {
 			}
 		}()
 
-		// 2. Запрос от другого пользователя
+		// 2. Запрос с токеном другого пользователя (не driver)
 		otherClientID := uuid.New()
 		payload := request.MoveTripDraftToPublishModelRequest{
-			TripID:   testData.TripID,
-			ClientID: otherClientID,
+			TripID: testData.TripID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -104,6 +111,14 @@ func TestMoveTripFromDraftToPublished_DriverNotMatch(t *testing.T) {
 		)
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
+
+		// ✅ Токен другого пользователя
+		token := testutils.GenerateTestToken(
+			otherClientID.String(),
+			"otheruser",
+			"other@example.com",
+		)
+		req.Header.Set("X-Refresh-Token", token)
 
 		resp, err := testApp.Test(req, -1)
 		require.NoError(t, err)
@@ -129,9 +144,9 @@ func TestMoveTripFromDraftToPublished_DriverNotMatch(t *testing.T) {
 func TestMoveTripFromDraftToPublished_TripNotFound(t *testing.T) {
 	t.Run("error - поездка не найдена", func(t *testing.T) {
 		// 1. Запрос с несуществующим ID
+		driverID := uuid.New()
 		payload := request.MoveTripDraftToPublishModelRequest{
-			TripID:   uuid.New(),
-			ClientID: uuid.New(),
+			TripID: uuid.New(),
 		}
 
 		body, err := json.Marshal(payload)
@@ -144,6 +159,14 @@ func TestMoveTripFromDraftToPublished_TripNotFound(t *testing.T) {
 		)
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
+
+		// ✅ Добавляем токен
+		token := testutils.GenerateTestToken(
+			driverID.String(),
+			"testuser",
+			"test@example.com",
+		)
+		req.Header.Set("X-Refresh-Token", token)
 
 		resp, err := testApp.Test(req, -1)
 		require.NoError(t, err)
@@ -182,8 +205,7 @@ func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
 
 		// 2. Пытаемся опубликовать уже опубликованную поездку
 		payload := request.MoveTripDraftToPublishModelRequest{
-			TripID:   testData.TripID,
-			ClientID: driverID,
+			TripID: testData.TripID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -196,6 +218,14 @@ func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
 		)
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
+
+		// ✅ Токен водителя
+		token := testutils.GenerateTestToken(
+			driverID.String(),
+			"testuser",
+			"test@example.com",
+		)
+		req.Header.Set("X-Refresh-Token", token)
 
 		resp, err := testApp.Test(req, -1)
 		require.NoError(t, err)
@@ -247,8 +277,7 @@ func TestMoveTripFromDraftToPublished_InvalidStatus(t *testing.T) {
 
 		// 3. Пытаемся опубликовать поездку в невалидном статусе
 		payload := request.MoveTripDraftToPublishModelRequest{
-			TripID:   testData.TripID,
-			ClientID: driverID,
+			TripID: testData.TripID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -261,6 +290,14 @@ func TestMoveTripFromDraftToPublished_InvalidStatus(t *testing.T) {
 		)
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
+
+		// ✅ Токен водителя
+		token := testutils.GenerateTestToken(
+			driverID.String(),
+			"testuser",
+			"test@example.com",
+		)
+		req.Header.Set("X-Refresh-Token", token)
 
 		resp, err := testApp.Test(req, -1)
 		require.NoError(t, err)

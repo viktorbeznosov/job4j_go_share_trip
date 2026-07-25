@@ -13,12 +13,12 @@ import (
 
 	trip_request "job4j_go_share_trip/internal/domain/trip/handler/request"
 	create_trip_response "job4j_go_share_trip/internal/domain/trip/handler/response"
+	testutils "job4j_go_share_trip/internal/test_utils"
 )
 
 func Test_CreateTrip(t *testing.T) {
 	t.Run("success - создание поездки", func(t *testing.T) {
 		payload := trip_request.CreateTripRequest{
-			DriverID:      uuid.New(),
 			FromPoint:     "TestFromPoint",
 			ToPoint:       "TestToPoint",
 			DepartureTime: time.Now().AddDate(0, 0, 1).Format("2006-01-02 15:04"),
@@ -35,6 +35,16 @@ func Test_CreateTrip(t *testing.T) {
 		)
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
+
+        userID := uuid.New()
+
+		// ✅ Генерируем валидный токен
+		token := testutils.GenerateTestToken(
+			userID.String(),
+			"testuser",
+			"test@example.com",
+		)
+		req.Header.Set("X-Refresh-Token", token)
 
 		resp, err := testApp.Test(req, -1)
 		require.NoError(t, err)

@@ -3,15 +3,9 @@ package request
 import (
 	"errors"
 	"time"
-
-	"github.com/google/uuid"
-
-	"job4j_go_share_trip/internal/validators"
 )
 
 var (
-	ErrDriverIDRequired      = errors.New("driverId is required")
-	ErrInvalidDriverID       = errors.New("driverId must be a valid UUID")
 	ErrFromPointRequired     = errors.New("fromPoint is required")
 	ErrToPointRequired       = errors.New("toPoint is required")
 	ErrDepartureTimeRequired = errors.New("departureTime is required")
@@ -22,7 +16,6 @@ var (
 )
 
 type CreateTripRequest struct {
-	DriverID      uuid.UUID `json:"driverId"`
 	FromPoint     string    `json:"fromPoint"`
 	ToPoint       string    `json:"toPoint"`
 	DepartureTime string    `json:"departureTime"` // Принимаем как строку
@@ -31,14 +24,6 @@ type CreateTripRequest struct {
 
 // Validate проверяет все поля запроса
 func (r *CreateTripRequest) Validate() error {
-	// 1. Проверка DriverID
-	if r.DriverID == uuid.Nil {
-		return ErrDriverIDRequired
-	}
-	if !validators.IsValidUUID(r.DriverID.String()) {
-		return ErrInvalidDriverID
-	}
-
 	// 2. Проверка FromPoint
 	if r.FromPoint == "" {
 		return ErrFromPointRequired

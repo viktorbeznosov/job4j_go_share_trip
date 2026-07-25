@@ -5,12 +5,14 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
 	"job4j_go_share_trip/internal/domain/trip/entity"
 	"job4j_go_share_trip/internal/domain/trip/handler/request"
 	"job4j_go_share_trip/internal/domain/trip/handler/response"
+	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/logctx"
 )
 
@@ -51,14 +53,31 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		))
 	}
 
+    claims, err := middleware.ClaimsFromContext(c)
+    if (err != nil) {
+        logger.Error("Error get claims", slog.Any("error", err))
+        return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
+            err.Error(),
+        ))
+    }
+
+    clientUUID, err := uuid.Parse(claims.Subject)
+    if err != nil {
+        logger.Error("Error get driverId", slog.Any("error", err))
+        return c.Status(fiber.StatusBadRequest).JSON(response.NewErrorResponse(
+            err.Error(),
+        ))
+    }
+
+
 	// Проверка прав
-	if trip.DriverID != req.ClientID {
+	if trip.DriverID != clientUUID {
 		logger.Warn("Forbidden: client is not driver",
-			slog.String("client_id", req.ClientID.String()),
+			slog.String("client_id", clientUUID.String()),
 			slog.String("driver_id", trip.DriverID.String()),
 		)
 		return c.Status(fiber.StatusForbidden).JSON(response.NewErrorResponse(
-			fmt.Sprintf("client %s is not driver of trip %s", req.ClientID, req.TripID),
+			fmt.Sprintf("client %s is not driver of trip %s", clientUUID, req.TripID),
 		))
 	}
 
