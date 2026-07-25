@@ -24,3 +24,11 @@ func EnvInt(key string, def int) int {
 	}
 	return n
 }
+
+func EnvBool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	return v == "true" || v=="TRUE" || v == "1" || v == "yes" || v == "on"
+}

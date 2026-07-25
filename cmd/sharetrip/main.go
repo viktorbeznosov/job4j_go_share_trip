@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -27,13 +28,15 @@ func main() {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	cfg := storage.Config{
-		Host:     config.Env("DB_HOST", "localhost"),
-		Port:     config.EnvInt("DB_PORT", 6543),
-		User:     config.Env("DB_USER", "postgres"),
-		Password: config.Env("DB_PASSWORD", "password"),
-		DBName:   config.Env("DB_NAME", "share_trip"),
-		SSLMode:  config.Env("DB_SSLMODE", "disable"),
+    cfg := config.GetAppConfig()
+
+	storageCfg := storage.Config{
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		User:     cfg.Database.User,
+		Password: cfg.Database.Password,
+		DBName:   cfg.Database.Name,
+		SSLMode:  cfg.Database.SSLMode,
 	}
 
     logger, logFile, err := app.NewLogger()
@@ -47,10 +50,10 @@ func main() {
 	}()
 
     tp, err := tracing.NewProvider(ctx, tracing.Config{
-        ServiceName:    "share-trip",
-        ServiceVersion: "1.0.0",
-        Environment:    "local",
-        Endpoint:       "localhost:4319",
+        ServiceName:    cfg.Tracing.ServiceName,
+        ServiceVersion: cfg.Tracing.ServiceVersion,
+        Environment:    cfg.Tracing.Environment,
+        Endpoint:       cfg.Tracing.Endpoint,
     })
     if err != nil {
         logger.Error("init tracing failed", "error", err)
@@ -69,7 +72,7 @@ func main() {
         }
     }()
 
-	pool, err := storage.NewPool(ctx, cfg.DSN())
+	pool, err := storage.NewPool(ctx, storageCfg.DSN())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -87,15 +90,15 @@ func main() {
 
     app.Use(middleware.KeycloakRefreshTokenMiddleware(
         middleware.KeycloakConfig{
-            Issuer:       config.Env("KEYCLOAK_ISSUER", "http://localhost:8087/realms/sharetrip"),
-            ClientID:     config.Env("KEYCLOAK_CLIENT_ID", "sharetrip-api"),
-            ClientSecret: config.Env("KEYCLOAK_CLIENT_SECRET", "secret"),
+            Issuer:       cfg.Keycloak.Issuer,
+            ClientID:     cfg.Keycloak.ClientID,
+            ClientSecret: cfg.Keycloak.ClientSecret,
         },
     ))
 
 	server.Route(app.Group("/api"))
 
-	err = app.Listen(":8080")
+	err = app.Listen(fmt.Sprintf(":%d", cfg.Server.Port))
 	if err != nil {
 		log.Fatal(err)
 	}
