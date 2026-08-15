@@ -15,6 +15,111 @@ ShareTrip — учебный проект по моделированию дом
 - отменять бронирования и поездки;
 - завершать поездки.
 
+## Структрура проекта
+
+```bash
+.
+├── cmd
+│   └── sharetrip
+│       └── main.go
+├── config
+│   ├── app.go
+│   └── env.go
+├── coverage.out
+├── deploy
+│   ├── alloy
+│   │   └── config.alloy
+│   ├── docker-compose.yml
+│   ├── logs
+│   ├── loki
+│   │   └── config.yaml
+│   ├── otel-collector
+│   │   └── config.yaml
+│   └── prometheus
+│       └── prometheus.yml
+├── docs
+├── go.mod
+├── go.sum
+├── internal
+│   ├── api
+│   │   ├── ready.go
+│   │   ├── route.go
+│   │   └── server.go
+│   ├── api_test
+│   │   ├── create_trip_test.go
+│   │   ├── fixtures_test.go
+│   │   ├── move_trip_draft_to_publish_integration_test.go
+│   │   └── server_test.go
+│   ├── app
+│   │   └── logger.go
+│   ├── clock
+│   ├── domain
+│   │   ├── slot
+│   │   │   ├── api
+│   │   │   ├── entity
+│   │   │   ├── repository
+│   │   │   └── service
+│   │   ├── trip
+│   │   │   ├── entity
+│   │   │   │   └── trip.go
+│   │   │   ├── handler
+│   │   │   │   ├── create_trip.go
+│   │   │   │   ├── get_trip_by_uuid.go
+│   │   │   │   ├── move_trip_draft_to_publish.go
+│   │   │   │   ├── request
+│   │   │   │   │   ├── create_trip_request.go
+│   │   │   │   │   └── move_trip_draft_to_publish_model_request.go
+│   │   │   │   ├── response
+│   │   │   │   │   ├── create_trip_response.go
+│   │   │   │   │   └── move_trip_draft_to_publish_model_response.go
+│   │   │   │   └── trip_handler.go
+│   │   │   ├── repository
+│   │   │   │   └── trip_repository.go
+│   │   │   └── service
+│   │   │       ├── create_trip.go
+│   │   │       ├── get_trip.go
+│   │   │       ├── service.go
+│   │   │       └── update_trip.go
+│   │   └── tripissue
+│   │       ├── api
+│   │       ├── entity
+│   │       ├── repository
+│   │       └── service
+│   ├── id
+│   ├── middleware
+│   │   ├── http_metrics_middleware.go
+│   │   ├── keycloak.go
+│   │   └── logger_middleware.go
+│   ├── observability
+│   │   ├── logctx
+│   │   │   └── logger_context.go
+│   │   ├── metrics
+│   │   │   └── metrics.go
+│   │   └── tracing
+│   │       └── tracing.go
+│   ├── shared
+│   │   └── outbox
+│   │       ├── event.go
+│   │       └── event_repository.go
+│   ├── storage
+│   │   ├── db.go
+│   │   ├── transaction.go
+│   │   └── unit_of_work.go
+│   ├── test_utils
+│   │   └── token.go
+│   └── validators
+│       └── uuid.go
+├── logs
+│   └── app.log
+├── Makefile
+├── migrations
+│   ├── 20260620075550_001_create_trip_tables.sql
+│   └── 20260627072720_create_outbox_event_table.sql
+├── README.md
+└── reports
+    └── coverage.out
+```
+
 ## Основные домены
 
 ### Trip

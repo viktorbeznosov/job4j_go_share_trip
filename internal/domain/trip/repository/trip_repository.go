@@ -193,13 +193,13 @@ func (r *TripRepository) CreateHistoryTx(
 	fromStatus *entity.Status,
 	toStatus *entity.Status,
 ) error {
-	// ✅ Безопасно получаем логгер
+	// Безопасно получаем логгер
 	logger := logctx.Logger(ctx)
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	// ✅ Безопасно получаем строки из статусов
+	// Безопасно получаем строки из статусов
 	fromStatusStr := ""
 	if fromStatus != nil {
 		fromStatusStr = string(*fromStatus)

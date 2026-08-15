@@ -114,7 +114,7 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 
 	logger.Info("trip published successfully", slog.String("trip_id", trip.ID.String()))
 
-	// ✅ Упрощенный ответ
+	// Упрощенный ответ
 	return c.Status(fiber.StatusOK).JSON(response.NewSuccessResponse(
 		response.NewMoveTripDraftToPublishResponse(updatedTrip),
 	))

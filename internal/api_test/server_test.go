@@ -81,7 +81,7 @@ func TestMain(m *testing.M) {
 
 	testApp = fiber.New()
 
-	// ✅ Исправленный мок: парсит Subject из токена
+	// Исправленный мок: парсит Subject из токена
 	testApp.Use(func(c *fiber.Ctx) error {
 		token := c.Get("X-Refresh-Token")
 		if token == "" {

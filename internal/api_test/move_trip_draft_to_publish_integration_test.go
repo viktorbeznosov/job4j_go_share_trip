@@ -49,7 +49,7 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
-		// ✅ Добавляем токен с правильным driverID
+		// Добавляем токен с правильным driverID
 		token := testutils.GenerateTestToken(
 			driverID.String(),
 			"testuser",
@@ -112,7 +112,7 @@ func TestMoveTripFromDraftToPublished_DriverNotMatch(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
-		// ✅ Токен другого пользователя
+		// Токен другого пользователя
 		token := testutils.GenerateTestToken(
 			otherClientID.String(),
 			"otheruser",
@@ -160,7 +160,7 @@ func TestMoveTripFromDraftToPublished_TripNotFound(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
-		// ✅ Добавляем токен
+		// Добавляем токен
 		token := testutils.GenerateTestToken(
 			driverID.String(),
 			"testuser",
@@ -219,7 +219,7 @@ func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
-		// ✅ Токен водителя
+		// Токен водителя
 		token := testutils.GenerateTestToken(
 			driverID.String(),
 			"testuser",
@@ -291,7 +291,7 @@ func TestMoveTripFromDraftToPublished_InvalidStatus(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
-		// ✅ Токен водителя
+		// Токен водителя
 		token := testutils.GenerateTestToken(
 			driverID.String(),
 			"testuser",

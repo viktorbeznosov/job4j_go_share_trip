@@ -38,7 +38,7 @@ func Test_CreateTrip(t *testing.T) {
 
         userID := uuid.New()
 
-		// ✅ Генерируем валидный токен
+		//Генерируем валидный токен
 		token := testutils.GenerateTestToken(
 			userID.String(),
 			"testuser",
@@ -49,7 +49,7 @@ func Test_CreateTrip(t *testing.T) {
 		resp, err := testApp.Test(req, -1)
 		require.NoError(t, err)
 
-		// ✅ Исправлено
+		//Исправлено
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
 				t.Errorf("failed to close response body: %v", err)

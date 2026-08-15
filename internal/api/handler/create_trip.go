@@ -89,7 +89,7 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 
 	logger.Info("create trip completed", slog.String("trip_id", trip.ID.String()))
 
-	// 6. ✅ Упрощенный ответ
+	// 6. Упрощенный ответ
 	return c.Status(fiber.StatusCreated).JSON(response.NewSuccessResponse(
 		response.NewItemResponse(trip),
 	))
