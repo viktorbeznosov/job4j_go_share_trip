@@ -65,7 +65,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("set goose dialect: %v", err)
 	}
 
-	if err = goose.Up(testDB, "../../migrations"); err != nil {
+	if err = goose.Up(testDB, "../../../migrations"); err != nil {
 		log.Fatalf("run migrations: %v", err)
 	}
 
