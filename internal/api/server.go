@@ -1,7 +1,6 @@
 package api
 
 import (
-	"job4j_go_share_trip/internal/api/handler"
 	"job4j_go_share_trip/internal/domain/trip/repository"
 	trip_service "job4j_go_share_trip/internal/domain/trip/service"
 	"job4j_go_share_trip/internal/observability/metrics"
@@ -12,7 +11,7 @@ import (
 )
 
 type Server struct{
-    TripHandler *handler.TripHandler
+    TripHandler *TripHandler
     Registry    *prometheus.Registry
     Metrics     *metrics.Metrics
 }
@@ -24,7 +23,7 @@ func NewServer(ppgxpool *pgxpool.Pool, registry *prometheus.Registry, m *metrics
         m,
     )
 	return &Server{
-        TripHandler: handler.NewTripHandler(tripService),
+        TripHandler: NewTripHandler(tripService),
         Registry:    registry,
         Metrics:     m,
 	}

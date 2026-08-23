@@ -1,15 +1,15 @@
 services:
   postgres:
     image: postgres:16
-    container_name: pg
+    container_name: pg_share_trip
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: tracker
+      POSTGRES_DB: share_trip
     ports:
       - "6543:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_share_trip:/var/lib/postgresql/data
     restart: unless-stopped
   loki:
     image: grafana/loki:3.7.0
@@ -91,7 +91,7 @@ services:
       - "8087:8080"
 
 volumes:
-  pgdata:
+  pgdata_share_trip:
   loki_data:
   grafana_data:
   prometheus_data:

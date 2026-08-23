@@ -15,12 +15,6 @@ func (s *TripService) Create(ctx context.Context, trip *entity.Trip) error {
 	started := time.Now()
 	result := "success"
 
-	defer func() {
-		s.metrics.TripCreateTotal.WithLabelValues(result).Inc()
-		s.metrics.TripCreateDuration.WithLabelValues(result).
-			Observe(time.Since(started).Seconds())
-	}()
-
 	logger := logctx.Logger(ctx).With(
 		slog.String("service", "TripService"),
 		slog.String("operation", "CreateTrip"),
@@ -78,6 +72,10 @@ func (s *TripService) Create(ctx context.Context, trip *entity.Trip) error {
         "transaction completed",
         slog.String("trip_id", trip.ID.String()),
     )
+
+    s.metrics.TripCreateTotal.WithLabelValues(result).Inc()
+    s.metrics.TripCreateDuration.WithLabelValues(result).
+        Observe(time.Since(started).Seconds())
 
     return nil
 }
