@@ -103,8 +103,7 @@ ShareTrip — учебный проект по моделированию дом
 │   │       └── event_repository.go
 │   ├── storage
 │   │   ├── db.go
-│   │   ├── transaction.go
-│   │   └── unit_of_work.go
+│   │   └── transaction.go   
 │   ├── test_utils
 │   │   └── token.go
 │   └── validators

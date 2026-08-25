@@ -66,14 +66,14 @@ func CreateTestTripWithStatus(
 		return nil, err
 	}
 
-	// Если нужен Published статус - обновляем
-	if status == entity.StatusPublished {
+	// Если нужен статус отличный от Draft - обновляем
+	if status != entity.StatusDraft {
 		data.Trip.Status = status
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(pool, m)
 
-		// Обновляем статус в БД
-		err := tripRepo.UpdateTx(ctx, pool, data.Trip)
+		// Используем публичный метод Update
+		err := tripRepo.Update(ctx, data.Trip)
 		if err != nil {
 			return nil, err
 		}
