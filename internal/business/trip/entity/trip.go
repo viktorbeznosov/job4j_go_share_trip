@@ -12,7 +12,8 @@ type Status string
 const (
 	StatusDraft     Status = "draft"
 	StatusPublished Status = "published"
-	StatusCanceled   Status = "canceled"
+	StatusStarted   Status = "started"
+	StatusCanceled  Status = "canceled"
 	StatusConfirmed Status = "completed"
 )
 

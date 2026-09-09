@@ -39,8 +39,8 @@ coverage:
 	@mkdir -p reports
 	GOTOOLCHAIN=local go test -coverprofile=reports/coverage.out \
 		-coverpkg=./internal/... \
-		./internal/api_test/... \
-		./internal/domain/trip/...
+		./internal/api/api_test/... \
+		./internal/business/trip/...
 	@echo ""
 	@echo "Coverage summary:"
 	GOTOOLCHAIN=local go tool cover -func=reports/coverage.out | grep total
@@ -56,8 +56,8 @@ coverage-report:
 	@echo "Running tests with coverage..."
 	GOTOOLCHAIN=local go test -coverprofile=reports/coverage.out \
 		-coverpkg=./internal/... \
-		./internal/api_test/... \
-		./internal/domain/trip/...
+		./internal/api/api_test/... \
+		./internal/business/trip/...
 	@echo ""
 	@echo "Coverage report:"
 	GOTOOLCHAIN=local go tool cover -func=reports/coverage.out
@@ -67,8 +67,8 @@ coverage-report:
 coverage-total:
 	GOTOOLCHAIN=local go test -coverprofile=reports/coverage.out \
 		-coverpkg=./internal/... \
-		./internal/api_test/... \
-		./internal/domain/trip/...
+		./internal/api/api_test/... \
+		./internal/business/trip/...
 	GOTOOLCHAIN=local go tool cover -func=reports/coverage.out | grep total
 
 # --- ЛИНТЕР ---

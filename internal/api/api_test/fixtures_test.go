@@ -8,25 +8,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"job4j_go_share_trip/internal/domain/trip/entity"
-	"job4j_go_share_trip/internal/domain/trip/repository"
+	"job4j_go_share_trip/internal/business/trip/entity"
+	"job4j_go_share_trip/internal/business/trip/repository"
 	"job4j_go_share_trip/internal/observability/metrics"
 )
 
-// TestData содержит тестовые данные для использования в тестах
 type TestData struct {
 	TripID   uuid.UUID
 	DriverID uuid.UUID
 	Trip     *entity.Trip
 }
 
-// getTestMetrics создаёт тестовые метрики (пустой реестр)
 func getTestMetrics() *metrics.Metrics {
 	registry := prometheus.NewRegistry()
 	return metrics.New(registry)
 }
 
-// CreateTestTrip создаёт тестовую поездку в БД
 func CreateTestTrip(ctx context.Context, pool *pgxpool.Pool, driverID uuid.UUID) (*TestData, error) {
 	m := getTestMetrics()
 	tripRepo := repository.NewPostgresRepository(pool, m)
@@ -54,7 +51,6 @@ func CreateTestTrip(ctx context.Context, pool *pgxpool.Pool, driverID uuid.UUID)
 	}, nil
 }
 
-// CreateTestTripWithStatus создаёт тестовую поездку с заданным статусом
 func CreateTestTripWithStatus(
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -66,13 +62,11 @@ func CreateTestTripWithStatus(
 		return nil, err
 	}
 
-	// Если нужен статус отличный от Draft - обновляем
 	if status != entity.StatusDraft {
 		data.Trip.Status = status
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(pool, m)
 
-		// Используем публичный метод Update
 		err := tripRepo.Update(ctx, data.Trip)
 		if err != nil {
 			return nil, err
@@ -82,7 +76,6 @@ func CreateTestTripWithStatus(
 	return data, nil
 }
 
-// CleanupTestData удаляет тестовые данные
 func CleanupTestData(ctx context.Context, pool *pgxpool.Pool, data *TestData) error {
 	_, err := pool.Exec(ctx, `DELETE FROM trips WHERE id = $1`, data.TripID)
 	return err

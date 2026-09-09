@@ -12,6 +12,7 @@ type EventName string
 const (
     TripCreated EventName = "trip_created"
     TripPublished EventName = "trip_published"
+    TripStarted EventName = "trip_started"
 )
 
 type Event struct {

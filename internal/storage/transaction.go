@@ -22,7 +22,6 @@ func Tx[T interface{}](
 	defer func() {
 		if err != nil {
 			if rollbackErr := txBegin.Rollback(ctx); rollbackErr != nil {
-				// Логируем ошибку rollback, но возвращаем основную ошибку
 				log.Printf("failed to rollback transaction: %v (original error: %v)", rollbackErr, err)
 			}
 		}
@@ -53,7 +52,6 @@ func TxWithoutResult(
 	defer func() {
 		if err != nil {
 			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-				// Логируем ошибку rollback, но возвращаем основную ошибку
 				log.Printf("failed to rollback transaction: %v (original error: %v)", rollbackErr, err)
 			}
 		}

@@ -88,13 +88,13 @@ func main() {
 	app.Use(middleware.Correlation(logger))
 	app.Use(middleware.NewHTTPMetricsMiddleware(m))
 
-    app.Use(middleware.KeycloakRefreshTokenMiddleware(
-        middleware.KeycloakConfig{
-            Issuer:       cfg.Keycloak.Issuer,
-            ClientID:     cfg.Keycloak.ClientID,
-            ClientSecret: cfg.Keycloak.ClientSecret,
-        },
-    ))
+//     app.Use(middleware.KeycloakRefreshTokenMiddleware(
+//         middleware.KeycloakConfig{
+//             Issuer:       cfg.Keycloak.Issuer,
+//             ClientID:     cfg.Keycloak.ClientID,
+//             ClientSecret: cfg.Keycloak.ClientSecret,
+//         },
+//     ))
 
 	server.Route(app.Group("/api"))
 

@@ -88,7 +88,6 @@ func TestMain(m *testing.M) {
 			return c.Next()
 		}
 
-		// Парсим токен, чтобы получить Subject
 		parts := strings.Split(token, ".")
 		if len(parts) != 3 {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -117,7 +116,6 @@ func TestMain(m *testing.M) {
 			})
 		}
 
-		// Создаём claims с Subject из токена
 		claims := &middleware.KeycloakClaims{
 			Subject:           subject,
 			PreferredUsername: "testuser",

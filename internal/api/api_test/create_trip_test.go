@@ -11,14 +11,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	trip_request "job4j_go_share_trip/internal/domain/trip/handler/request"
-	create_trip_response "job4j_go_share_trip/internal/domain/trip/handler/response"
+	"job4j_go_share_trip/internal/api"
 	testutils "job4j_go_share_trip/internal/test_utils"
 )
 
 func Test_CreateTrip(t *testing.T) {
 	t.Run("success - создание поездки", func(t *testing.T) {
-		payload := trip_request.CreateTripRequest{
+		payload := api.CreateTripRequest{
 			FromPoint:     "TestFromPoint",
 			ToPoint:       "TestToPoint",
 			DepartureTime: time.Now().AddDate(0, 0, 1).Format("2006-01-02 15:04"),
@@ -36,9 +35,8 @@ func Test_CreateTrip(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
-        userID := uuid.New()
+		userID := uuid.New()
 
-		//Генерируем валидный токен
 		token := testutils.GenerateTestToken(
 			userID.String(),
 			"testuser",
@@ -49,7 +47,6 @@ func Test_CreateTrip(t *testing.T) {
 		resp, err := testApp.Test(req, -1)
 		require.NoError(t, err)
 
-		//Исправлено
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
 				t.Errorf("failed to close response body: %v", err)
@@ -61,18 +58,20 @@ func Test_CreateTrip(t *testing.T) {
 		respBody, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		var got create_trip_response.ItemResponse
-		err = json.Unmarshal(respBody, &got)
+		var response api.Response
+		err = json.Unmarshal(respBody, &response)
 		require.NoError(t, err)
 
-		require.Equal(t, create_trip_response.ItemResponse{
-			ID:            got.ID,
-			DriverID:      got.DriverID,
-			FromPoint:     got.FromPoint,
-			ToPoint:       got.ToPoint,
-			DepartureTime: got.DepartureTime,
-			Seats:         got.Seats,
-			Status:        got.Status,
-		}, got)
+		require.Equal(t, "Success", response.Status)
+
+		data, ok := response.Data.(map[string]interface{})
+		require.True(t, ok)
+
+		require.NotEmpty(t, data["id"])
+		require.NotEmpty(t, data["driverId"])
+		require.Equal(t, payload.FromPoint, data["fromPoint"])
+		require.Equal(t, payload.ToPoint, data["toPoint"])
+		require.Equal(t, float64(payload.Seats), data["seats"])
+		require.Equal(t, "draft", data["status"])
 	})
 }

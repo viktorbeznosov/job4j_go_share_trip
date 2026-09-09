@@ -4,6 +4,7 @@
 CREATE TYPE trip_status AS ENUM (
     'draft',
     'published',
+    'started',
     'canceled',
     'completed'
 );

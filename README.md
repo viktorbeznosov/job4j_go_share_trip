@@ -42,49 +42,58 @@ ShareTrip — учебный проект по моделированию дом
 ├── go.sum
 ├── internal
 │   ├── api
+│   │   ├── api_test
+│   │   │   ├── create_trip_test.go
+│   │   │   ├── fixtures_test.go
+│   │   │   ├── move_trip_draft_to_publish_integration_test.go
+│   │   │   ├── move_trip_from_publish_to_started_integration_test.go
+│   │   │   └── server_test.go
+│   │   ├── create_trip.go
+│   │   ├── errors
+│   │   │   └── trip_errors.go
+│   │   ├── get_trip.go
+│   │   ├── move_trip_draft_to_publish.go
+│   │   ├── move_trip_from_publish_to_started.go
 │   │   ├── ready.go
+│   │   ├── response.go
 │   │   ├── route.go
-│   │   └── server.go
-│   ├── api_test
-│   │   ├── create_trip_test.go
-│   │   ├── fixtures_test.go
-│   │   ├── move_trip_draft_to_publish_integration_test.go
-│   │   └── server_test.go
+│   │   ├── server.go
+│   │   └── trip_handler.go
 │   ├── app
 │   │   └── logger.go
-│   ├── clock
-│   ├── domain
+│   ├── business
 │   │   ├── slot
 │   │   │   ├── api
 │   │   │   ├── entity
 │   │   │   ├── repository
 │   │   │   └── service
 │   │   ├── trip
+│   │   │   ├── domain
+│   │   │   │   ├── create_trip.go
+│   │   │   │   ├── domain.go
+│   │   │   │   ├── get_trip.go
+│   │   │   │   ├── move_trip_draft_to_publish.go
+│   │   │   │   └── move_trip_from_publish_to_started.go
 │   │   │   ├── entity
 │   │   │   │   └── trip.go
-│   │   │   ├── handler
-│   │   │   │   ├── create_trip.go
-│   │   │   │   ├── get_trip_by_uuid.go
-│   │   │   │   ├── move_trip_draft_to_publish.go
-│   │   │   │   ├── request
-│   │   │   │   │   ├── create_trip_request.go
-│   │   │   │   │   └── move_trip_draft_to_publish_model_request.go
-│   │   │   │   ├── response
-│   │   │   │   │   ├── create_trip_response.go
-│   │   │   │   │   └── move_trip_draft_to_publish_model_response.go
-│   │   │   │   └── trip_handler.go
 │   │   │   ├── repository
-│   │   │   │   └── trip_repository.go
+│   │   │   │   ├── create_trip.go
+│   │   │   │   ├── get_trip.go
+│   │   │   │   ├── repository.go
+│   │   │   │   ├── trip_history.go
+│   │   │   │   └── update_trip.go
 │   │   │   └── service
 │   │   │       ├── create_trip.go
 │   │   │       ├── get_trip.go
-│   │   │       ├── service.go
-│   │   │       └── update_trip.go
+│   │   │       ├── move_trip_draft_to_publish.go
+│   │   │       ├── move_trip_from_publish_to_started.go
+│   │   │       └── service.go
 │   │   └── tripissue
 │   │       ├── api
 │   │       ├── entity
 │   │       ├── repository
 │   │       └── service
+│   ├── clock
 │   ├── id
 │   ├── middleware
 │   │   ├── http_metrics_middleware.go
@@ -103,7 +112,7 @@ ShareTrip — учебный проект по моделированию дом
 │   │       └── event_repository.go
 │   ├── storage
 │   │   ├── db.go
-│   │   └── transaction.go   
+│   │   └── transaction.go
 │   ├── test_utils
 │   │   └── token.go
 │   └── validators
@@ -115,8 +124,10 @@ ShareTrip — учебный проект по моделированию дом
 │   ├── 20260620075550_001_create_trip_tables.sql
 │   └── 20260627072720_create_outbox_event_table.sql
 ├── README.md
-└── reports
-    └── coverage.out
+├── reports
+│   └── coverage.out
+├── rule.md
+└── skill.md
 ```
 
 ## Основные домены

@@ -1,3 +1,4 @@
+// internal/api/move_trip_from_publish_to_started.go
 package api
 
 import (
@@ -18,45 +19,33 @@ import (
 	"job4j_go_share_trip/internal/validators"
 )
 
-type MoveTripDraftToPublishModelRequest struct {
+type MoveTripFromPublishToStartedRequest struct {
 	TripID uuid.UUID `json:"tripId"`
 }
 
-type MoveTripDraftToPublishResponse struct {
+type MoveTripFromPublishToStartedResponse struct {
 	TripID string `json:"tripId"`
 }
 
-func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
+func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 
 	logger := logctx.Logger(ctx).With(
-		slog.String("handler", "MoveTripDraftToPublish"),
+		slog.String("handler", "MoveTripFromPublishToStarted"),
 	)
 
 	tracer := otel.Tracer("trip-api")
-	_, span := tracer.Start(ctx, "MoveTripDraftToPublish")
+	_, span := tracer.Start(ctx, "MoveTripFromPublishToStarted")
 	defer span.End()
 
-	var req MoveTripDraftToPublishModelRequest
+	var req MoveTripFromPublishToStartedRequest
 
 	if err := c.BodyParser(&req); err != nil {
 		return h.errorMapper.MapParseError(c, err, "Invalid JSON body")
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validateMovePublishToStartedRequest(&req); err != nil {
 		return h.errorMapper.MapValidationError(c, err)
-	}
-
-	getReq := service.GetTripRequest{
-		TripID: req.TripID,
-	}
-
-	tripResp, err := h.TripService.GetByTripID(ctx, getReq)
-	if err != nil {
-		if errors.Is(err, tripErrors.ErrTripNotFound) {
-			return h.errorMapper.MapNotFound(c, err, "Trip not found")
-		}
-		return h.errorMapper.MapError(c, err)
 	}
 
 	claims, err := middleware.ClaimsFromContext(c)
@@ -71,6 +60,19 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		return h.errorMapper.MapParseError(c, err, "Error get driver id")
 	}
 
+	getReq := service.GetTripRequest{
+		TripID: req.TripID,
+	}
+
+	tripResp, err := h.TripService.GetByTripID(ctx, getReq)
+	if err != nil {
+		if errors.Is(err, tripErrors.ErrTripNotFound) {
+			return h.errorMapper.MapNotFound(c, err, "Trip not found")
+		}
+		return h.errorMapper.MapError(c, err)
+	}
+
+	// Проверяем права
 	if tripResp.DriverID != clientUUID {
 		logger.Warn("Forbidden: client is not driver",
 			slog.String("client_id", clientUUID.String()),
@@ -82,30 +84,32 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		)
 	}
 
-	if tripResp.Status == string(entity.StatusPublished) {
+	// Если поездка уже начата — 204 No Content
+	if tripResp.Status == string(entity.StatusStarted) {
 		return c.Status(fiber.StatusNoContent).JSON(Response{
 			Status: "Success",
-			Data: MoveTripDraftToPublishResponse{
+			Data: MoveTripFromPublishToStartedResponse{
 				TripID: tripResp.ID.String(),
 			},
 		})
 	}
 
-	if tripResp.Status != string(entity.StatusDraft) {
+	// Если статус не published — конфликт
+	if tripResp.Status != string(entity.StatusPublished) {
 		return h.errorMapper.MapConflict(c,
-			fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusDraft, tripResp.Status),
-			fmt.Sprintf("Invalid status: expected %s, got %s", entity.StatusDraft, tripResp.Status),
+			fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusPublished, tripResp.Status),
+			fmt.Sprintf("Invalid status: expected %s, got %s", entity.StatusPublished, tripResp.Status),
 		)
 	}
 
-	serviceReq := service.MoveFromDraftToPublishRequest{
+	serviceReq := service.MoveFromPublishToStartedRequest{
 		TripID:    req.TripID,
 		DriverID:  clientUUID,
-		OldStatus: string(entity.StatusDraft),
-		NewStatus: string(entity.StatusPublished),
+		OldStatus: string(entity.StatusPublished),
+		NewStatus: string(entity.StatusStarted),
 	}
 
-	serviceResp, err := h.TripService.MoveFromDraftToPublish(ctx, serviceReq)
+	serviceResp, err := h.TripService.MoveFromPublishToStarted(ctx, serviceReq)
 	if err != nil {
 		logger.Warn("Failed to update trip", slog.Any("error", err))
 		return h.errorMapper.MapError(c, err)
@@ -114,25 +118,25 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 	span.SetAttributes(
 		attribute.String("trip_id", serviceResp.ID.String()),
 		attribute.String("client_id", serviceResp.DriverID.String()),
-		attribute.String("status", string(serviceResp.Status)),
+		attribute.String("status", serviceResp.Status),
 	)
 
-	logger.Info("trip published successfully", slog.String("trip_id", serviceResp.ID.String()))
+	logger.Info("trip moved from publish to started successfully", slog.String("trip_id", serviceResp.ID.String()))
 
 	return c.Status(fiber.StatusOK).JSON(Response{
 		Status: "Success",
-		Data: MoveTripDraftToPublishResponse{
+		Data: MoveTripFromPublishToStartedResponse{
 			TripID: serviceResp.ID.String(),
 		},
 	})
 }
 
-func (r *MoveTripDraftToPublishModelRequest) Validate() error {
-	if r.TripID == uuid.Nil {
+func validateMovePublishToStartedRequest(req *MoveTripFromPublishToStartedRequest) error {
+	if req.TripID == uuid.Nil {
 		return tripErrors.ErrTripIDRequired
 	}
 
-	if !validators.IsValidUUID(r.TripID.String()) {
+	if !validators.IsValidUUID(req.TripID.String()) {
 		return tripErrors.ErrInvalidTripID
 	}
 
