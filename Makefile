@@ -1,7 +1,7 @@
 # Переменные
 GO := go
 GO_PKG := ./...
-DOCKER_COMPOSE := docker compose --project-directory ./deploy
+DOCKER_COMPOSE := docker compose -p sharetrip --project-directory ./deploy
 
 DB_USER ?= postgres
 DB_PASSWORD ?= password

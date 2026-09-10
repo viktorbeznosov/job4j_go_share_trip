@@ -11,6 +11,7 @@ import (
 	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/business/trip/repository"
 	"job4j_go_share_trip/internal/observability/metrics"
+	contractclient "job4j_go_share_trip/internal/clients/contract"
 )
 
 type TestData struct {
@@ -79,4 +80,28 @@ func CreateTestTripWithStatus(
 func CleanupTestData(ctx context.Context, pool *pgxpool.Pool, data *TestData) error {
 	_, err := pool.Exec(ctx, `DELETE FROM trips WHERE id = $1`, data.TripID)
 	return err
+}
+
+type MockContractClient struct {
+	Allowed bool
+	Reason  string
+	Err     error
+}
+
+func NewMockContractClient(allowed bool) *MockContractClient {
+	return &MockContractClient{Allowed: allowed}
+}
+
+func (m *MockContractClient) CheckService(
+	_ context.Context,
+	_ string,
+	_ entity.ServiceType,
+) (contractclient.CheckResult, error) {
+	if m.Err != nil {
+		return contractclient.CheckResult{}, m.Err
+	}
+	return contractclient.CheckResult{
+		Allowed: m.Allowed,
+		Reason:  m.Reason,
+	}, nil
 }

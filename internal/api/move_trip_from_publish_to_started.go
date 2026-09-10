@@ -55,6 +55,7 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 	}
 
 	clientUUID, err := uuid.Parse(claims.Subject)
+
 	if err != nil {
 		logger.Error("Error get driverId", slog.Any("error", err))
 		return h.errorMapper.MapParseError(c, err, "Error get driver id")
@@ -72,7 +73,6 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 		return h.errorMapper.MapError(c, err)
 	}
 
-	// Проверяем права
 	if tripResp.DriverID != clientUUID {
 		logger.Warn("Forbidden: client is not driver",
 			slog.String("client_id", clientUUID.String()),
@@ -83,7 +83,6 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 		)
 	}
 
-	// Если поездка уже начата — 204 No Content
 	if tripResp.Status == string(entity.StatusStarted) {
 		return c.Status(fiber.StatusNoContent).JSON(Response{
 			Status: "Success",
@@ -93,7 +92,6 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 		})
 	}
 
-	// Если статус не published — конфликт
 	if tripResp.Status != string(entity.StatusPublished) {
 		return h.errorMapper.MapConflict(c,
 			fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusPublished, tripResp.Status),

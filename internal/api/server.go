@@ -1,3 +1,4 @@
+// internal/api/server.go
 package api
 
 import (
@@ -11,28 +12,35 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type Server struct{
-    TripHandler *TripHandler
-    Registry    *prometheus.Registry
-    Metrics     *metrics.Metrics
+type Server struct {
+	TripHandler *TripHandler
+	Registry    *prometheus.Registry
+	Metrics     *metrics.Metrics
 }
 
-func NewServer(ppgxpool *pgxpool.Pool, registry *prometheus.Registry, m *metrics.Metrics) *Server {
-    tripDomain := domain.NewDomain(
-        *repository.NewPostgresRepository(ppgxpool, m),
-        *outbox.NewEventRepository(ppgxpool, m),
-        m,
-    )
+func NewServer(
+	pool *pgxpool.Pool,
+	registry *prometheus.Registry,
+	m *metrics.Metrics,
+	contractClient trip_service.ContractClient,
+) *Server {
+	tripDomain := domain.NewDomain(
+		*repository.NewPostgresRepository(pool, m),
+		*outbox.NewEventRepository(pool, m),
+		m,
+	)
 
-    tripService := trip_service.NewService(
-        *tripDomain,
-        *repository.NewPostgresRepository(ppgxpool, m),
-        *outbox.NewEventRepository(ppgxpool, m),
-        m,
-    )
+	tripService := trip_service.NewService(
+		*tripDomain,
+		*repository.NewPostgresRepository(pool, m),
+		*outbox.NewEventRepository(pool, m),
+		contractClient,   // ← прокидываем дальше
+		m,
+	)
+
 	return &Server{
-        TripHandler: NewTripHandler(tripService),
-        Registry:    registry,
-        Metrics:     m,
+		TripHandler: NewTripHandler(tripService),
+		Registry:    registry,
+		Metrics:     m,
 	}
 }

@@ -1,4 +1,3 @@
-// internal/api/errors/trip_errors.go
 package errors
 
 import (
@@ -16,6 +15,8 @@ var (
 	ErrTripIDRequired = errors.New("trip id is required")
 	ErrInvalidTripID = errors.New("trip id must be a valid UUID")
 	ErrDriverIDRequired = errors.New("driver id is required")
+	ErrTripPublishIsNotAllowed = errors.New("trip publish is not allowed")
+	ErrTripStartIsNotAllowed = errors.New("trip start is not allowed")
 )
 
 var (
@@ -74,6 +75,11 @@ func GetErrorMessage(err error) string {
 		return "Trip is not in published status"
 	case errors.Is(err, ErrDriverNotOwner):
 		return "Driver is not the owner of the trip"
+	case errors.Is(err, ErrTripPublishIsNotAllowed):
+		return "Publish trips is not allowed for this company"
+	case errors.Is(err, ErrTripStartIsNotAllowed):
+		return "Start trips is not allowed for this company"
+
 	default:
 		return "Internal server error"
 	}
@@ -83,6 +89,12 @@ func GetHTTPStatus(err error) int {
 	switch {
 	case errors.Is(err, ErrTripNotFound):
 		return 404
+
+	case errors.Is(err, ErrDriverNotOwner),
+		errors.Is(err, ErrTripPublishIsNotAllowed),
+		errors.Is(err, ErrTripStartIsNotAllowed):
+		return 403
+
 	case errors.Is(err, ErrInvalidStatusTransition),
 		errors.Is(err, ErrInvalidStatus),
 		errors.Is(err, ErrUnknownStatus),
@@ -90,6 +102,7 @@ func GetHTTPStatus(err error) int {
 		errors.Is(err, ErrTripNotDraft),
 		errors.Is(err, ErrTripNotPublished):
 		return 409
+
 	case errors.Is(err, ErrFromPointRequired),
 		errors.Is(err, ErrToPointRequired),
 		errors.Is(err, ErrDepartureTimeRequired),
@@ -101,8 +114,7 @@ func GetHTTPStatus(err error) int {
 		errors.Is(err, ErrInvalidTripID),
 		errors.Is(err, ErrDriverIDRequired):
 		return 400
-	case errors.Is(err, ErrDriverNotOwner):
-		return 403
+
 	default:
 		return 500
 	}

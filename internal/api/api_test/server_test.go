@@ -77,7 +77,9 @@ func TestMain(m *testing.M) {
 	registry := prometheus.NewRegistry()
 	metrix := metrics.New(registry)
 
-	server := api.NewServer(testPool, registry, metrix)
+    contractClient := NewMockContractClient(true)
+
+	server := api.NewServer(testPool, registry, metrix, contractClient)
 
 	testApp = fiber.New()
 

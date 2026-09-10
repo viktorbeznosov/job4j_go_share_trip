@@ -3,6 +3,7 @@ module job4j_go_share_trip
 go 1.25.5
 
 require (
+	github.com/go-resty/resty/v2 v2.17.2
 	github.com/gofiber/contrib/otelfiber/v2 v2.2.3
 	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/google/uuid v1.6.0

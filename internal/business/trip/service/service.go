@@ -8,22 +8,25 @@ import (
 )
 
 type TripService struct {
-    tripDomain domain.TripDomain
-	tripRepository repository.TripRepository
+	tripDomain      domain.TripDomain
+	tripRepository  repository.TripRepository
 	eventRepository outbox.EventRepository
-	metrics *metrics.Metrics
+	contractClient  ContractClient   // ← интерфейс, не *contractclient.Client
+	metrics         *metrics.Metrics
 }
 
 func NewService(
-    tripDomain domain.TripDomain,
-    tripRepository repository.TripRepository,
-    eventRepository outbox.EventRepository,
-    metrics *metrics.Metrics,
+	tripDomain domain.TripDomain,
+	tripRepository repository.TripRepository,
+	eventRepository outbox.EventRepository,
+	contractClient ContractClient,
+	metrics *metrics.Metrics,
 ) *TripService {
 	return &TripService{
-	    tripDomain: tripDomain,
-		tripRepository: tripRepository,
+		tripDomain:      tripDomain,
+		tripRepository:  tripRepository,
 		eventRepository: eventRepository,
-		metrics: metrics,
+		contractClient:  contractClient,
+		metrics:         metrics,
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/api"
 	"job4j_go_share_trip/internal/app"
+	"job4j_go_share_trip/internal/clients/contract"
 	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/metrics"
 	"job4j_go_share_trip/internal/observability/tracing"
@@ -81,7 +82,9 @@ func main() {
     registry := prometheus.NewRegistry()
     m := metrics.New(registry)
 
-	server := api.NewServer(pool, registry, m)
+    contractClient := contract.NewClient()
+
+	server := api.NewServer(pool, registry, m, contractClient)
 
 	app := fiber.New()
 

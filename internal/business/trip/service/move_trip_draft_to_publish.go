@@ -2,10 +2,14 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"job4j_go_share_trip/config"
+	tripErrors "job4j_go_share_trip/internal/api/errors"
 	"job4j_go_share_trip/internal/business/trip/domain"
+	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/observability/logctx"
 
 	"github.com/google/uuid"
@@ -31,6 +35,26 @@ type MoveFromDraftToPublishResponse struct {
 }
 
 func (s *TripService) MoveFromDraftToPublish(ctx context.Context, req MoveFromDraftToPublishRequest) (*MoveFromDraftToPublishResponse, error) {
+	logger := logctx.Logger(ctx).With(
+		slog.String("service", "TripService"),
+		slog.String("operation", "ModeTripFromDraftToPublished"),
+		slog.String("client_id", req.DriverID.String()),
+		slog.String("trip_id", req.TripID.String()),
+	)
+
+    cfg := config.GetAppConfig()
+
+    tripPublishAllowedResp, err := s.contractClient.CheckService(
+        ctx, cfg.Company.CompanyID, entity.ServiceTripPublish,
+    )
+    if err != nil {
+        logger.Error("failed to check contract service", slog.Any("error", err))
+        return nil, fmt.Errorf("%w: %s", tripErrors.ErrTripPublishIsNotAllowed, err.Error())
+    }
+    if !tripPublishAllowedResp.Allowed {
+        return nil, fmt.Errorf("%w: %s", tripErrors.ErrTripPublishIsNotAllowed, tripPublishAllowedResp.Reason)
+    }
+
 	ctx, span := otel.Tracer("TripService").Start(ctx, "TripService.Update")
 	defer span.End()
 
@@ -42,13 +66,6 @@ func (s *TripService) MoveFromDraftToPublish(ctx context.Context, req MoveFromDr
 		s.metrics.TripPublishDuration.WithLabelValues(result).
 			Observe(time.Since(started).Seconds())
 	}()
-
-	logger := logctx.Logger(ctx).With(
-		slog.String("service", "TripService"),
-		slog.String("operation", "ModeTripFromDraftToPublished"),
-		slog.String("client_id", req.DriverID.String()),
-		slog.String("trip_id", req.TripID.String()),
-	)
 
 	logger.Info("update trip from draft to publish started")
 
