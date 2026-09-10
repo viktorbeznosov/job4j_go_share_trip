@@ -1,3 +1,4 @@
+// internal/api/api_test/move_trip_from_publish_to_started_integration_test.go
 package api_test
 
 import (
@@ -70,6 +71,13 @@ func TestMoveTripFromPublishToStarted_Success(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
+		var response api.MoveTripFromPublishToStartedResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Success", response.Status)
+		require.Equal(t, testData.TripID.String(), response.Data.TripID)
+
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
 		updatedTrip, err := tripRepo.GetByTripID(ctx, testData.TripID)
@@ -125,6 +133,13 @@ func TestMoveTripFromPublishToStarted_InvalidStatus(t *testing.T) {
 		}()
 
 		assert.Equal(t, http.StatusConflict, resp.StatusCode)
+
+		var response api.ErrorResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Error", response.Status)
+		require.Contains(t, response.Message, "invalid trip status")
 
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
@@ -186,6 +201,7 @@ func TestMoveTripFromPublishToStarted_AlreadyStarted(t *testing.T) {
 		}()
 
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		// 204 No Content — тела нет, декодировать нечего
 	})
 }
 
@@ -242,6 +258,13 @@ func TestMoveTripFromPublishToStarted_DriverNotMatch(t *testing.T) {
 		}()
 
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+
+		var response api.ErrorResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Error", response.Status)
+		require.Contains(t, response.Message, "is not driver")
 	})
 }
 
@@ -280,5 +303,12 @@ func TestMoveTripFromPublishToStarted_TripNotFound(t *testing.T) {
 		}()
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		var response api.ErrorResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Error", response.Status)
+		require.Equal(t, "trip not found", response.Message)
 	})
 }

@@ -54,7 +54,7 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 	tripResp, err := h.TripService.GetByTripID(ctx, getReq)
 	if err != nil {
 		if errors.Is(err, tripErrors.ErrTripNotFound) {
-			return h.errorMapper.MapNotFound(c, err, "Trip not found")
+			return h.errorMapper.MapNotFound(c, err)
 		}
 		return h.errorMapper.MapError(c, err)
 	}
@@ -78,25 +78,18 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		)
 		return h.errorMapper.MapForbidden(c,
 			fmt.Errorf("client %s is not driver of trip %s", clientUUID, req.TripID),
-			"Client is not the driver of this trip",
 		)
 	}
 
 	if tripResp.Status == string(entity.StatusPublished) {
-		return c.Status(fiber.StatusNoContent).JSON(Response{
-			Status: "Success",
-			Data: MoveTripDraftToPublishResponse{
-				TripID: tripResp.ID.String(),
-			},
-		})
+        return c.SendStatus(fiber.StatusNoContent)
 	}
 
-	if tripResp.Status != string(entity.StatusDraft) {
-		return h.errorMapper.MapConflict(c,
-			fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusDraft, tripResp.Status),
-			fmt.Sprintf("Invalid status: expected %s, got %s", entity.StatusDraft, tripResp.Status),
-		)
-	}
+    if tripResp.Status != string(entity.StatusDraft) {
+        return h.errorMapper.MapConflict(c,
+            fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusDraft, tripResp.Status),
+        )
+    }
 
 	serviceReq := service.MoveFromDraftToPublishRequest{
 		TripID:    req.TripID,

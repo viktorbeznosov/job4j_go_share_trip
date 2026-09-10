@@ -67,7 +67,7 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 	tripResp, err := h.TripService.GetByTripID(ctx, getReq)
 	if err != nil {
 		if errors.Is(err, tripErrors.ErrTripNotFound) {
-			return h.errorMapper.MapNotFound(c, err, "Trip not found")
+			return h.errorMapper.MapNotFound(c, err)
 		}
 		return h.errorMapper.MapError(c, err)
 	}
@@ -80,7 +80,6 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 		)
 		return h.errorMapper.MapForbidden(c,
 			fmt.Errorf("client %s is not driver of trip %s", clientUUID, req.TripID),
-			"Client is not the driver of this trip",
 		)
 	}
 
@@ -98,7 +97,6 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 	if tripResp.Status != string(entity.StatusPublished) {
 		return h.errorMapper.MapConflict(c,
 			fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusPublished, tripResp.Status),
-			fmt.Sprintf("Invalid status: expected %s, got %s", entity.StatusPublished, tripResp.Status),
 		)
 	}
 

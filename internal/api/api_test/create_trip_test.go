@@ -58,20 +58,19 @@ func Test_CreateTrip(t *testing.T) {
 		respBody, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		var response api.Response
+		var response api.CreateTripResponseWrapper
 		err = json.Unmarshal(respBody, &response)
 		require.NoError(t, err)
 
 		require.Equal(t, "Success", response.Status)
 
-		data, ok := response.Data.(map[string]interface{})
-		require.True(t, ok)
-
-		require.NotEmpty(t, data["id"])
-		require.NotEmpty(t, data["driverId"])
-		require.Equal(t, payload.FromPoint, data["fromPoint"])
-		require.Equal(t, payload.ToPoint, data["toPoint"])
-		require.Equal(t, float64(payload.Seats), data["seats"])
-		require.Equal(t, "draft", data["status"])
+		require.NotEmpty(t, response.Data.ID)
+		require.Equal(t, userID.String(), response.Data.DriverID)
+		require.Equal(t, payload.FromPoint, response.Data.FromPoint)
+		require.Equal(t, payload.ToPoint, response.Data.ToPoint)
+		require.Equal(t, payload.Seats, response.Data.Seats)
+		require.Equal(t, "draft", response.Data.Status)
+		require.NotZero(t, response.Data.CreatedAt)
+		require.NotZero(t, response.Data.DepartureTime)
 	})
 }

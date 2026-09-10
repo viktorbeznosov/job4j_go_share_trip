@@ -34,7 +34,7 @@ func (h *TripHandler) GetTripByUUID(c *fiber.Ctx) error {
 	tripResponse, err := h.TripService.GetByTripID(c.Context(), serviceRequest)
 	if err != nil {
 		if errors.Is(err, tripErrors.ErrTripNotFound) {
-			return h.errorMapper.MapNotFound(c, err, "Trip not found")
+			return h.errorMapper.MapNotFound(c, err)
 		}
 		return h.errorMapper.MapError(c, err)
 	}

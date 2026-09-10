@@ -66,6 +66,13 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
+		var response api.MoveTripDraftToPublishResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Success", response.Status)
+		require.Equal(t, testData.TripID.String(), response.Data.TripID)
+
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
 		updatedTrip, err := tripRepo.GetByTripID(ctx, testData.TripID)
@@ -123,6 +130,13 @@ func TestMoveTripFromDraftToPublished_DriverNotMatch(t *testing.T) {
 
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 
+		var response api.ErrorResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Error", response.Status)
+		require.NotEmpty(t, response.Message)
+
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
 		updatedTrip, err := tripRepo.GetByTripID(ctx, testData.TripID)
@@ -166,6 +180,13 @@ func TestMoveTripFromDraftToPublished_TripNotFound(t *testing.T) {
 		}()
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		var response api.ErrorResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Error", response.Status)
+		require.Equal(t, "trip not found", response.Message)
 	})
 }
 
@@ -221,6 +242,7 @@ func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
 		}()
 
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		// 204 No Content — тела нет, декодировать нечего
 
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
@@ -286,6 +308,13 @@ func TestMoveTripFromDraftToPublished_InvalidStatus(t *testing.T) {
 		}()
 
 		assert.Equal(t, http.StatusConflict, resp.StatusCode)
+
+		var response api.ErrorResponseWrapper
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		require.NoError(t, err)
+
+		require.Equal(t, "Error", response.Status)
+		require.Contains(t, response.Message, "invalid trip status")
 
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
