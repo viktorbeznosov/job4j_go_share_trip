@@ -71,16 +71,6 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		return h.errorMapper.MapParseError(c, err, "Error get driver id")
 	}
 
-	if tripResp.DriverID != clientUUID {
-		logger.Warn("Forbidden: client is not driver",
-			slog.String("client_id", clientUUID.String()),
-			slog.String("driver_id", tripResp.DriverID.String()),
-		)
-		return h.errorMapper.MapForbidden(c,
-			fmt.Errorf("client %s is not driver of trip %s", clientUUID, req.TripID),
-		)
-	}
-
 	if tripResp.Status == string(entity.StatusPublished) {
         return c.SendStatus(fiber.StatusNoContent)
 	}
@@ -92,8 +82,8 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
     }
 
 	serviceReq := service.MoveFromDraftToPublishRequest{
-		TripID:    req.TripID,
-		DriverID:  clientUUID,
+		Trip:    *tripResp,
+		ClientID:  clientUUID,
 		OldStatus: string(entity.StatusDraft),
 		NewStatus: string(entity.StatusPublished),
 	}

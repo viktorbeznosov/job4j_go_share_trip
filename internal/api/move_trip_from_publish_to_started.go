@@ -73,16 +73,6 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 		return h.errorMapper.MapError(c, err)
 	}
 
-	if tripResp.DriverID != clientUUID {
-		logger.Warn("Forbidden: client is not driver",
-			slog.String("client_id", clientUUID.String()),
-			slog.String("driver_id", tripResp.DriverID.String()),
-		)
-		return h.errorMapper.MapForbidden(c,
-			fmt.Errorf("client %s is not driver of trip %s", clientUUID, req.TripID),
-		)
-	}
-
 	if tripResp.Status == string(entity.StatusStarted) {
 		return c.Status(fiber.StatusNoContent).JSON(Response{
 			Status: "Success",
@@ -99,8 +89,8 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 	}
 
 	serviceReq := service.MoveFromPublishToStartedRequest{
-		TripID:    req.TripID,
-		DriverID:  clientUUID,
+		Trip:    *tripResp,
+		ClientID:  clientUUID,
 		OldStatus: string(entity.StatusPublished),
 		NewStatus: string(entity.StatusStarted),
 	}

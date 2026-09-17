@@ -17,8 +17,8 @@ import (
 )
 
 type MoveFromPublishToStartedRequest struct {
-	TripID    uuid.UUID
-	DriverID  uuid.UUID
+	Trip    GetTripResponse
+	ClientID  uuid.UUID
 	OldStatus string
 	NewStatus string
 }
@@ -41,8 +41,8 @@ func (s *TripService) MoveFromPublishToStarted(ctx context.Context, req MoveFrom
 	logger := logctx.Logger(ctx).With(
 		slog.String("service", "TripService"),
 		slog.String("operation", "MoveFromPublishToStarted"),
-		slog.String("client_id", req.DriverID.String()),
-		slog.String("trip_id", req.TripID.String()),
+		slog.String("client_id", req.ClientID.String()),
+		slog.String("trip_id", req.Trip.ID.String()),
 	)
 
     cfg := config.GetAppConfig()
@@ -69,9 +69,20 @@ func (s *TripService) MoveFromPublishToStarted(ctx context.Context, req MoveFrom
 
 	logger.Info("move from publish to started started")
 
+    domainTrip := domain.GetTripResponse{
+        ID: req.Trip.ID,
+        DriverID: req.Trip.DriverID,
+        FromPoint: req.Trip.FromPoint,
+        ToPoint: req.Trip.ToPoint,
+        DepartureTime: req.Trip.DepartureTime,
+        Seats: req.Trip.Seats,
+        Status: req.Trip.Status,
+        CreatedAt: req.Trip.CreatedAt,
+    }
+
 	domainReq := domain.MoveFromPublishToStartedRequest{
-		TripID:    req.TripID,
-		DriverID:  req.DriverID,
+		Trip:      domainTrip,
+		ClientID:  req.ClientID,
 		OldStatus: req.OldStatus,
 		NewStatus: req.NewStatus,
 	}

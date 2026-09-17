@@ -1,4 +1,3 @@
-// internal/business/trip/domain/move_trip_draft_to_publish.go
 package domain
 
 import (
@@ -11,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	tripErrors "job4j_go_share_trip/internal/api/errors"
 	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/observability/logctx"
 	"job4j_go_share_trip/internal/shared/outbox"
@@ -18,8 +18,8 @@ import (
 )
 
 type MoveFromDraftToPublishRequest struct {
-	TripID    uuid.UUID
-	DriverID  uuid.UUID
+	Trip      GetTripResponse
+	ClientID  uuid.UUID
 	OldStatus string
 	NewStatus string
 }
@@ -35,34 +35,49 @@ type MoveFromDraftToPublishResponse struct {
 	CreatedAt     time.Time
 }
 
-func (d *TripDomain) MoveFromDraftToPublish(ctx context.Context, req MoveFromDraftToPublishRequest) (*MoveFromDraftToPublishResponse, error) {
+func (d *TripDomain) MoveFromDraftToPublish(
+	ctx context.Context,
+	req MoveFromDraftToPublishRequest,
+) (*MoveFromDraftToPublishResponse, error) {
 	started := time.Now()
 	result := "success"
 
 	logger := logctx.Logger(ctx).With(
 		slog.String("domain", "TripDomain"),
 		slog.String("operation", "MoveFromDraftToPublish"),
-		slog.String("client_id", req.DriverID.String()),
-		slog.String("trip_id", req.TripID.String()),
+		slog.String("client_id", req.ClientID.String()),
+		slog.String("trip_id", req.Trip.ID.String()),
 	)
 
+	if req.ClientID != req.Trip.DriverID {
+		logger.Warn("Forbidden: client is not driver",
+			slog.String("client_id", req.ClientID.String()),
+			slog.String("driver_id", req.Trip.DriverID.String()),
+		)
+		return nil, fmt.Errorf("%w: client %s is not the owner of trip %s",
+			tripErrors.ErrDriverNotOwner, req.ClientID, req.Trip.ID)
+	}
+
 	if req.OldStatus != string(entity.StatusDraft) {
-		return nil, fmt.Errorf("invalid old status: expected %s, got %s", entity.StatusDraft, req.OldStatus)
+		return nil, fmt.Errorf("%w: expected %s, got %s",
+			tripErrors.ErrTripNotDraft, entity.StatusDraft, req.OldStatus)
 	}
 
 	if req.NewStatus != string(entity.StatusPublished) {
-		return nil, fmt.Errorf("invalid new status: expected %s, got %s", entity.StatusPublished, req.NewStatus)
+		return nil, fmt.Errorf("%w: expected %s, got %s",
+			tripErrors.ErrInvalidStatusTransition, entity.StatusPublished, req.NewStatus)
 	}
 
 	trip, err := storage.Tx(ctx, d.tripRepository.GetDB(), func(tx pgx.Tx) (*entity.Trip, error) {
-		trip, err := d.tripRepository.GetForUpdateByIDWithTX(ctx, tx, req.TripID)
+		trip, err := d.tripRepository.GetForUpdateByIDWithTX(ctx, tx, req.Trip.ID)
 		if err != nil {
 			logger.Error("failed to get trip for update", slog.Any("error", err))
 			return nil, err
 		}
 
-		if trip.DriverID != req.DriverID {
-			return nil, fmt.Errorf("driver %s is not the owner of trip %s", req.DriverID, req.TripID)
+		if trip.DriverID != req.ClientID {
+			return nil, fmt.Errorf("%w: driver %s is not the owner of trip %s",
+				tripErrors.ErrDriverNotOwner, req.ClientID, trip.ID)
 		}
 
 		if trip.Status == entity.StatusPublished {
@@ -71,7 +86,8 @@ func (d *TripDomain) MoveFromDraftToPublish(ctx context.Context, req MoveFromDra
 		}
 
 		if trip.Status != entity.StatusDraft {
-			return nil, fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusDraft, trip.Status)
+			return nil, fmt.Errorf("%w: expected %s, got %s",
+				tripErrors.ErrTripNotDraft, entity.StatusDraft, trip.Status)
 		}
 
 		oldStatus := trip.Status
@@ -116,7 +132,9 @@ func (d *TripDomain) MoveFromDraftToPublish(ctx context.Context, req MoveFromDra
 		return nil, err
 	}
 
-	logger.Info("trip moved from draft to publish successfully", slog.String("new_status", string(trip.Status)))
+	logger.Info("trip moved from draft to publish successfully",
+		slog.String("new_status", string(trip.Status)),
+	)
 
 	return &MoveFromDraftToPublishResponse{
 		ID:            trip.ID,

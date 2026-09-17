@@ -73,8 +73,8 @@ func GetErrorMessage(err error) string {
 		return "Trip is not in draft status"
 	case errors.Is(err, ErrTripNotPublished):
 		return "Trip is not in published status"
-	case errors.Is(err, ErrDriverNotOwner):
-		return "Driver is not the owner of the trip"
+    case errors.Is(err, ErrDriverNotOwner):
+        return "Client is not driver of this trip"
 	case errors.Is(err, ErrTripPublishIsNotAllowed):
 		return "Publish trips is not allowed for this company"
 	case errors.Is(err, ErrTripStartIsNotAllowed):
