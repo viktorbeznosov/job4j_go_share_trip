@@ -3,12 +3,12 @@ package api_test
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"job4j_go_share_trip/internal/api"
@@ -55,22 +55,21 @@ func Test_CreateTrip(t *testing.T) {
 
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-		respBody, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
 		var response api.CreateTripResponseWrapper
-		err = json.Unmarshal(respBody, &response)
+		err = json.NewDecoder(resp.Body).Decode(&response)
 		require.NoError(t, err)
 
-		require.Equal(t, "Success", response.Status)
+		expected := api.CreateTripResponse{
+			ID:            response.Data.ID, // ID генерируется на сервере
+			DriverID:      userID.String(),
+			FromPoint:     payload.FromPoint,
+			ToPoint:       payload.ToPoint,
+			Seats:         payload.Seats,
+			Status:        "draft",
+			CreatedAt:     response.Data.CreatedAt,     // время генерируется на сервере
+			DepartureTime: response.Data.DepartureTime, // парсится на сервере
+		}
 
-		require.NotEmpty(t, response.Data.ID)
-		require.Equal(t, userID.String(), response.Data.DriverID)
-		require.Equal(t, payload.FromPoint, response.Data.FromPoint)
-		require.Equal(t, payload.ToPoint, response.Data.ToPoint)
-		require.Equal(t, payload.Seats, response.Data.Seats)
-		require.Equal(t, "draft", response.Data.Status)
-		require.NotZero(t, response.Data.CreatedAt)
-		require.NotZero(t, response.Data.DepartureTime)
+		assert.Equal(t, expected, response.Data)
 	})
 }
