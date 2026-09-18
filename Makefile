@@ -113,3 +113,18 @@ migrate-reset: ## Откатить все миграции
 
 migrate-create: ## Создать новую миграцию (использовать: make migrate-create NAME=имя_миграции)
 	goose -dir ./migrations create $(NAME) sql
+
+MOCKGEN_VERSION := v0.6.0
+
+.PHONY: deps install-mockgen generate generate-mocks
+
+deps: install-mockgen
+
+install-mockgen:
+	go install go.uber.org/mock/mockgen@$(MOCKGEN_VERSION)
+
+generate: generate-mocks
+
+generate-mocks: deps
+	go generate ./...
+

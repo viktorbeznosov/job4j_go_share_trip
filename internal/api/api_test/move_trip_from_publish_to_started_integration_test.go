@@ -11,12 +11,53 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
+	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/api"
+	tripErrors "job4j_go_share_trip/internal/api/errors"
+	"job4j_go_share_trip/internal/business/trip/domain"
 	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/business/trip/repository"
+	"job4j_go_share_trip/internal/business/trip/service"
+	"job4j_go_share_trip/internal/business/trip/service/mocks"
+	"job4j_go_share_trip/internal/clients/contract"
+	"job4j_go_share_trip/internal/shared/outbox"
 	testutils "job4j_go_share_trip/internal/test_utils"
 )
+
+func newTestTripService(contractClient service.ContractClient) *service.TripService {
+	m := getTestMetrics()
+	tripRepo := repository.NewPostgresRepository(testPool, m)
+	eventRepo := outbox.NewEventRepository(testPool, m)
+	tripDomain := domain.NewDomain(*tripRepo, *eventRepo, m)
+
+	return service.NewService(
+		*tripDomain,
+		*tripRepo,
+		*eventRepo,
+		contractClient,
+		m,
+	)
+}
+
+func moveFromPublishToStartedRequest(data *TestData) service.MoveFromPublishToStartedRequest {
+	return service.MoveFromPublishToStartedRequest{
+		Trip: service.GetTripResponse{
+			ID:            data.TripID,
+			DriverID:      data.DriverID,
+			FromPoint:     data.Trip.FromPoint,
+			ToPoint:       data.Trip.ToPoint,
+			DepartureTime: data.Trip.DepartureTime,
+			Seats:         data.Trip.Seats,
+			Status:        string(data.Trip.Status),
+			CreatedAt:     data.Trip.CreatedAt,
+		},
+		ClientID:  data.DriverID,
+		OldStatus: string(entity.StatusPublished),
+		NewStatus: string(entity.StatusStarted),
+	}
+}
 
 func TestMoveTripFromPublishToStarted_Success(t *testing.T) {
 	t.Run("success - перевод из Published в Started", func(t *testing.T) {
@@ -312,3 +353,121 @@ func TestMoveTripFromPublishToStarted_TripNotFound(t *testing.T) {
 		require.Equal(t, "trip not found", response.Message)
 	})
 }
+
+func TestService_StartTrip_Allowed(t *testing.T) {
+	ctx := context.Background()
+	driverID := uuid.New()
+
+	testData, err := CreateTestTripWithStatus(
+		ctx,
+		testPool,
+		driverID,
+		entity.StatusPublished,
+	)
+	require.NoError(t, err)
+
+	defer func() {
+		err := CleanupTestData(ctx, testPool, testData)
+		if err != nil {
+			t.Errorf("failed to cleanup test data: %v", err)
+		}
+	}()
+
+	ctrl := gomock.NewController(t)
+	contractClient := mocks.NewMockContractClient(ctrl)
+
+	cfg := config.GetAppConfig()
+	contractClient.EXPECT().
+		CheckService(gomock.Any(), cfg.Company.CompanyID, entity.ServiceTripStart).
+		Return(contract.CheckResult{Allowed: true, Reason: "service_allowed"}, nil)
+
+	svc := newTestTripService(contractClient)
+
+	resp, err := svc.MoveFromPublishToStarted(ctx, moveFromPublishToStartedRequest(testData))
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, string(entity.StatusStarted), resp.Status)
+}
+
+func TestService_StartTrip_Denied(t *testing.T) {
+	ctx := context.Background()
+	driverID := uuid.New()
+
+	testData, err := CreateTestTripWithStatus(
+		ctx,
+		testPool,
+		driverID,
+		entity.StatusPublished,
+	)
+	require.NoError(t, err)
+
+	defer func() {
+		err := CleanupTestData(ctx, testPool, testData)
+		if err != nil {
+			t.Errorf("failed to cleanup test data: %v", err)
+		}
+	}()
+
+	ctrl := gomock.NewController(t)
+	contractClient := mocks.NewMockContractClient(ctrl)
+
+	cfg := config.GetAppConfig()
+	contractClient.EXPECT().
+		CheckService(gomock.Any(), cfg.Company.CompanyID, entity.ServiceTripStart).
+		Return(contract.CheckResult{Allowed: false, Reason: "service_not_allowed"}, nil)
+
+	svc := newTestTripService(contractClient)
+
+	_, err = svc.MoveFromPublishToStarted(ctx, moveFromPublishToStartedRequest(testData))
+
+	require.ErrorIs(t, err, tripErrors.ErrTripStartIsNotAllowed)
+
+	m := getTestMetrics()
+	tripRepo := repository.NewPostgresRepository(testPool, m)
+	updatedTrip, err := tripRepo.GetByTripID(ctx, testData.TripID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.StatusPublished, updatedTrip.Status)
+}
+
+func TestService_StartTrip_Timeout(t *testing.T) {
+	ctx := context.Background()
+	driverID := uuid.New()
+
+	testData, err := CreateTestTripWithStatus(
+		ctx,
+		testPool,
+		driverID,
+		entity.StatusPublished,
+	)
+	require.NoError(t, err)
+
+	defer func() {
+		err := CleanupTestData(ctx, testPool, testData)
+		if err != nil {
+			t.Errorf("failed to cleanup test data: %v", err)
+		}
+	}()
+
+	ctrl := gomock.NewController(t)
+	contractClient := mocks.NewMockContractClient(ctrl)
+
+	cfg := config.GetAppConfig()
+	contractClient.EXPECT().
+		CheckService(gomock.Any(), cfg.Company.CompanyID, entity.ServiceTripStart).
+		Return(contract.CheckResult{}, context.DeadlineExceeded)
+
+	svc := newTestTripService(contractClient)
+
+	_, err = svc.MoveFromPublishToStarted(ctx, moveFromPublishToStartedRequest(testData))
+
+	require.ErrorIs(t, err, tripErrors.ErrTripStartIsNotAllowed)
+	require.Contains(t, err.Error(), context.DeadlineExceeded.Error())
+
+	m := getTestMetrics()
+	tripRepo := repository.NewPostgresRepository(testPool, m)
+	updatedTrip, err := tripRepo.GetByTripID(ctx, testData.TripID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.StatusPublished, updatedTrip.Status)
+}
+

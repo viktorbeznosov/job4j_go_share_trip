@@ -1,5 +1,7 @@
 package service
 
+//go:generate mockgen -source=contract_client.go -destination=mocks/contract_client.go -package=mocks
+
 import (
 	"context"
 
