@@ -89,9 +89,12 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
     ports:
       - "8087:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
 
 volumes:
   pgdata_share_trip:
   loki_data:
   grafana_data:
   prometheus_data:
+  keycloak_data:
