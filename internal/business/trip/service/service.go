@@ -11,14 +11,15 @@ import (
 )
 
 type ContractChecker interface {
-    CheckService(ctx context.Context, companyID, serviceCode string) (contract.CheckResult, error)
+	CheckService(ctx context.Context, companyID, serviceCode string) (contract.CheckResult, error)
 }
 
 type TripService struct {
 	tripDomain      domain.TripDomain
 	tripRepository  repository.TripRepository
 	eventRepository outbox.EventRepository
-	contractClient  ContractClient   // ← интерфейс, не *contractclient.Client
+	contractClient  ContractClient
+	tripPublisher   TripEventPublisher
 	metrics         *metrics.Metrics
 }
 
@@ -27,6 +28,7 @@ func NewService(
 	tripRepository repository.TripRepository,
 	eventRepository outbox.EventRepository,
 	contractClient ContractClient,
+	tripPublisher TripEventPublisher,
 	metrics *metrics.Metrics,
 ) *TripService {
 	return &TripService{
@@ -34,6 +36,7 @@ func NewService(
 		tripRepository:  tripRepository,
 		eventRepository: eventRepository,
 		contractClient:  contractClient,
+		tripPublisher:   tripPublisher,
 		metrics:         metrics,
 	}
 }

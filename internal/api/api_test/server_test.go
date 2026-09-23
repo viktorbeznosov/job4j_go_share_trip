@@ -79,7 +79,7 @@ func TestMain(m *testing.M) {
 
     contractClient := NewMockContractClient(true)
 
-	server := api.NewServer(testPool, registry, metrix, contractClient)
+	server := api.NewServer(testPool, registry, metrix, contractClient, nil)
 
 	testApp = fiber.New()
 

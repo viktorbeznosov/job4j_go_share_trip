@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/api"
 	"job4j_go_share_trip/internal/app"
 	"job4j_go_share_trip/internal/clients/contract"
+	"job4j_go_share_trip/internal/events"
 	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/metrics"
 	"job4j_go_share_trip/internal/observability/tracing"
@@ -29,7 +31,7 @@ func main() {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-    cfg := config.GetAppConfig()
+	cfg := config.GetAppConfig()
 
 	storageCfg := storage.Config{
 		Host:     cfg.Database.Host,
@@ -40,38 +42,38 @@ func main() {
 		SSLMode:  cfg.Database.SSLMode,
 	}
 
-    logger, logFile, err := app.NewLogger()
-    if err != nil {
-        panic(err)
-    }
+	logger, logFile, err := app.NewLogger()
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
 		if err := logFile.Close(); err != nil {
 			log.Printf("failed to close log file: %v", err)
 		}
 	}()
 
-    tp, err := tracing.NewProvider(ctx, tracing.Config{
-        ServiceName:    cfg.Tracing.ServiceName,
-        ServiceVersion: cfg.Tracing.ServiceVersion,
-        Environment:    cfg.Tracing.Environment,
-        Endpoint:       cfg.Tracing.Endpoint,
-    })
-    if err != nil {
-        logger.Error("init tracing failed", "error", err)
-        os.Exit(1)
-    }
+	tp, err := tracing.NewProvider(ctx, tracing.Config{
+		ServiceName:    cfg.Tracing.ServiceName,
+		ServiceVersion: cfg.Tracing.ServiceVersion,
+		Environment:    cfg.Tracing.Environment,
+		Endpoint:       cfg.Tracing.Endpoint,
+	})
+	if err != nil {
+		logger.Error("init tracing failed", "error", err)
+		os.Exit(1)
+	}
 
-    defer func() {
-        shutdownCtx, cancel := context.WithTimeout(
-            context.Background(),
-            5 * time.Second,
-        )
-        defer cancel()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer cancel()
 
-        if err := tp.Shutdown(shutdownCtx); err != nil {
-            logger.Error("shutdown tracing failed", "error", err)
-        }
-    }()
+		if err := tp.Shutdown(shutdownCtx); err != nil {
+			logger.Error("shutdown tracing failed", "error", err)
+		}
+	}()
 
 	pool, err := storage.NewPool(ctx, storageCfg.DSN())
 	if err != nil {
@@ -79,25 +81,35 @@ func main() {
 	}
 	defer pool.Close()
 
-    registry := prometheus.NewRegistry()
-    m := metrics.New(registry)
+	registry := prometheus.NewRegistry()
+	m := metrics.New(registry)
 
-    contractClient := contract.NewClient()
+	contractClient := contract.NewClient()
 
-	server := api.NewServer(pool, registry, m, contractClient)
+	tripProducer := events.NewProducer(
+		strings.Split(cfg.Kafka.Brokers, ","),
+		cfg.Kafka.TripEventsTopic,
+	)
+	defer func() {
+		if err := tripProducer.Close(); err != nil {
+			logger.Error("failed to close kafka producer", "error", err)
+		}
+	}()
+
+	server := api.NewServer(pool, registry, m, contractClient, tripProducer)
 
 	app := fiber.New()
 
 	app.Use(middleware.Correlation(logger))
 	app.Use(middleware.NewHTTPMetricsMiddleware(m))
 
-    app.Use(middleware.KeycloakRefreshTokenMiddleware(
-        middleware.KeycloakConfig{
-            Issuer:       cfg.Keycloak.Issuer,
-            ClientID:     cfg.Keycloak.ClientID,
-            ClientSecret: cfg.Keycloak.ClientSecret,
-        },
-    ))
+	app.Use(middleware.KeycloakRefreshTokenMiddleware(
+		middleware.KeycloakConfig{
+			Issuer:       cfg.Keycloak.Issuer,
+			ClientID:     cfg.Keycloak.ClientID,
+			ClientSecret: cfg.Keycloak.ClientSecret,
+		},
+	))
 
 	server.Route(app.Group("/api"))
 

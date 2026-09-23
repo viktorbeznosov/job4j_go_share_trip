@@ -23,6 +23,7 @@ func NewServer(
 	registry *prometheus.Registry,
 	m *metrics.Metrics,
 	contractClient trip_service.ContractClient,
+	tripPublisher trip_service.TripEventPublisher,
 ) *Server {
 	tripDomain := domain.NewDomain(
 		*repository.NewPostgresRepository(pool, m),
@@ -34,7 +35,8 @@ func NewServer(
 		*tripDomain,
 		*repository.NewPostgresRepository(pool, m),
 		*outbox.NewEventRepository(pool, m),
-		contractClient,   // ← прокидываем дальше
+		contractClient,
+		tripPublisher,
 		m,
 	)
 

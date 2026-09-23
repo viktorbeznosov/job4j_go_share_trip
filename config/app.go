@@ -1,13 +1,14 @@
 package config
 
 type AppConfig struct {
-	App      AppConfigSection
-	Database DatabaseConfigSection
-	Keycloak KeycloakConfigSection
-	Tracing  TracingConfigSection
-	Server   ServerConfigSection
+	App            AppConfigSection
+	Database       DatabaseConfigSection
+	Keycloak       KeycloakConfigSection
+	Tracing        TracingConfigSection
+	Server         ServerConfigSection
 	ContractClient ContractClientSection
-	Company CompanySection
+	Company        CompanySection
+	Kafka          KafkaConfigSection
 }
 
 type AppConfigSection struct {
@@ -42,17 +43,22 @@ type TracingConfigSection struct {
 }
 
 type ContractClientSection struct {
-    BaseUrl     string  `json:"baseUrl"`
-    TimeOut     int     `json:"timeout"`
-    Retry       int     `json:"retry"`
+	BaseUrl string `json:"baseUrl"`
+	TimeOut int    `json:"timeout"`
+	Retry   int    `json:"retry"`
 }
 
 type CompanySection struct {
-    CompanyID string `json:"companyId"`
+	CompanyID string `json:"companyId"`
 }
 
 type ServerConfigSection struct {
 	Port int `json:"port"`
+}
+
+type KafkaConfigSection struct {
+	Brokers         string `json:"brokers"`
+	TripEventsTopic string `json:"tripEventsTopic"`
 }
 
 func GetAppConfig() AppConfig {
@@ -87,13 +93,17 @@ func GetAppConfig() AppConfig {
 		Server: ServerConfigSection{
 			Port: EnvInt("SERVER_PORT", 8080),
 		},
-        ContractClient: ContractClientSection{
-            BaseUrl:    Env("CONTRACT_SERVICE_BASE_URL", "http://localhost:8082"),
-            TimeOut:    EnvInt("CONTRACT_SERVICE_TIME_OUT", 2),
-            Retry:      EnvInt("CONTRACT_SERVICE_RETRY_COUNT", 2),
-        },
-        Company: CompanySection{
-            CompanyID: Env("COMPANY_ID", "11111111-1111-1111-1111-111111111111"),
-        },
+		ContractClient: ContractClientSection{
+			BaseUrl: Env("CONTRACT_SERVICE_BASE_URL", "http://localhost:8082"),
+			TimeOut: EnvInt("CONTRACT_SERVICE_TIME_OUT", 2),
+			Retry:   EnvInt("CONTRACT_SERVICE_RETRY_COUNT", 2),
+		},
+		Company: CompanySection{
+			CompanyID: Env("COMPANY_ID", "11111111-1111-1111-1111-111111111111"),
+		},
+		Kafka: KafkaConfigSection{
+			Brokers:         Env("KAFKA_BROKERS", "localhost:9092"),
+			TripEventsTopic: Env("KAFKA_TRIP_EVENTS_TOPIC", "trip.events"),
+		},
 	}
 }

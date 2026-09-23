@@ -37,6 +37,7 @@ func newTestTripService(contractClient service.ContractClient) *service.TripServ
 		*tripRepo,
 		*eventRepo,
 		contractClient,
+		nil,
 		m,
 	)
 }
