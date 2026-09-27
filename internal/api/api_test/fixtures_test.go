@@ -10,8 +10,8 @@ import (
 
 	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/business/trip/repository"
-	"job4j_go_share_trip/internal/observability/metrics"
 	contractclient "job4j_go_share_trip/internal/clients/contract"
+	"job4j_go_share_trip/internal/observability/metrics"
 )
 
 type TestData struct {
@@ -19,6 +19,8 @@ type TestData struct {
 	DriverID uuid.UUID
 	Trip     *entity.Trip
 }
+
+var testCompanyID = uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
 func getTestMetrics() *metrics.Metrics {
 	registry := prometheus.NewRegistry()

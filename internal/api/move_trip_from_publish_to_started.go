@@ -3,8 +3,8 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -12,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	tripErrors "job4j_go_share_trip/internal/api/errors"
-	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/business/trip/service"
 	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/logctx"
@@ -20,11 +19,19 @@ import (
 )
 
 type MoveTripFromPublishToStartedRequest struct {
-	TripID uuid.UUID `json:"tripId"`
+	TripID    uuid.UUID `json:"tripId"`
+	CompanyID uuid.UUID `json:"companyId"`
 }
 
 type MoveTripFromPublishToStartedResponse struct {
-	TripID string `json:"tripId"`
+	ID            string    `json:"id"`
+	DriverID      string    `json:"driverId"`
+	FromPoint     string    `json:"fromPoint"`
+	ToPoint       string    `json:"toPoint"`
+	DepartureTime time.Time `json:"departureTime"`
+	Seats         int       `json:"seats"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
@@ -61,43 +68,21 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 		return h.errorMapper.MapParseError(c, err, "Error get driver id")
 	}
 
-	getReq := service.GetTripRequest{
-		TripID: req.TripID,
-	}
-
-	tripResp, err := h.TripService.GetByTripID(ctx, getReq)
-	if err != nil {
-		if errors.Is(err, tripErrors.ErrTripNotFound) {
-			return h.errorMapper.MapNotFound(c, err)
-		}
-		return h.errorMapper.MapError(c, err)
-	}
-
-	if tripResp.Status == string(entity.StatusStarted) {
-		return c.Status(fiber.StatusNoContent).JSON(Response{
-			Status: "Success",
-			Data: MoveTripFromPublishToStartedResponse{
-				TripID: tripResp.ID.String(),
-			},
-		})
-	}
-
-	if tripResp.Status != string(entity.StatusPublished) {
-		return h.errorMapper.MapConflict(c,
-			fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusPublished, tripResp.Status),
-		)
-	}
-
 	serviceReq := service.MoveFromPublishToStartedRequest{
-		Trip:    *tripResp,
+		TripID:    req.TripID,
 		ClientID:  clientUUID,
-		OldStatus: string(entity.StatusPublished),
-		NewStatus: string(entity.StatusStarted),
+		CompanyID: req.CompanyID,
 	}
 
 	serviceResp, err := h.TripService.MoveFromPublishToStarted(ctx, serviceReq)
 	if err != nil {
 		logger.Warn("Failed to update trip", slog.Any("error", err))
+		if errors.Is(err, tripErrors.ErrTripNotFound) {
+			return h.errorMapper.MapNotFound(c, err)
+		}
+		if errors.Is(err, tripErrors.ErrTripNotPublished) {
+			return h.errorMapper.MapConflict(c, err)
+		}
 		return h.errorMapper.MapError(c, err)
 	}
 
@@ -109,12 +94,30 @@ func (h *TripHandler) MoveTripFromPublishToStarted(c *fiber.Ctx) error {
 
 	logger.Info("trip moved from publish to started successfully", slog.String("trip_id", serviceResp.ID.String()))
 
-	return c.Status(fiber.StatusOK).JSON(Response{
+	status := fiber.StatusOK
+	if serviceResp.AlreadyStarted {
+		status = fiber.StatusNoContent
+	}
+
+	return c.Status(status).JSON(Response{
 		Status: "Success",
-		Data: MoveTripFromPublishToStartedResponse{
-			TripID: serviceResp.ID.String(),
-		},
+		Data:   newMoveTripFromPublishToStartedResponse(*serviceResp),
 	})
+}
+
+func newMoveTripFromPublishToStartedResponse(
+	trip service.MoveFromPublishToStartedResponse,
+) MoveTripFromPublishToStartedResponse {
+	return MoveTripFromPublishToStartedResponse{
+		ID:            trip.ID.String(),
+		DriverID:      trip.DriverID.String(),
+		FromPoint:     trip.FromPoint,
+		ToPoint:       trip.ToPoint,
+		DepartureTime: trip.DepartureTime,
+		Seats:         trip.Seats,
+		Status:        trip.Status,
+		CreatedAt:     trip.CreatedAt,
+	}
 }
 
 func validateMovePublishToStartedRequest(req *MoveTripFromPublishToStartedRequest) error {
@@ -124,6 +127,14 @@ func validateMovePublishToStartedRequest(req *MoveTripFromPublishToStartedReques
 
 	if !validators.IsValidUUID(req.TripID.String()) {
 		return tripErrors.ErrInvalidTripID
+	}
+
+	if req.CompanyID == uuid.Nil {
+		return tripErrors.ErrCompanyIDRequired
+	}
+
+	if !validators.IsValidUUID(req.CompanyID.String()) {
+		return tripErrors.ErrInvalidCompanyID
 	}
 
 	return nil

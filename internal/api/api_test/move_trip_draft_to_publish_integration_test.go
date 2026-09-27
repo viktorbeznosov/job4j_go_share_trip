@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +35,8 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 		}()
 
 		payload := api.MoveTripDraftToPublishModelRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -71,7 +73,14 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, "Success", response.Status)
-		require.Equal(t, testData.TripID.String(), response.Data.TripID)
+		require.Equal(t, testData.TripID.String(), response.Data.ID)
+		require.Equal(t, driverID.String(), response.Data.DriverID)
+		require.Equal(t, testData.Trip.FromPoint, response.Data.FromPoint)
+		require.Equal(t, testData.Trip.ToPoint, response.Data.ToPoint)
+		require.WithinDuration(t, testData.Trip.DepartureTime, response.Data.DepartureTime, time.Second)
+		require.Equal(t, testData.Trip.Seats, response.Data.Seats)
+		require.Equal(t, string(entity.StatusPublished), response.Data.Status)
+		require.WithinDuration(t, testData.Trip.CreatedAt, response.Data.CreatedAt, time.Second)
 
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
@@ -98,7 +107,8 @@ func TestMoveTripFromDraftToPublished_DriverNotMatch(t *testing.T) {
 
 		otherClientID := uuid.New()
 		payload := api.MoveTripDraftToPublishModelRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -149,7 +159,8 @@ func TestMoveTripFromDraftToPublished_TripNotFound(t *testing.T) {
 	t.Run("error - поездка не найдена", func(t *testing.T) {
 		driverID := uuid.New()
 		payload := api.MoveTripDraftToPublishModelRequest{
-			TripID: uuid.New(),
+			TripID:    uuid.New(),
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -211,7 +222,8 @@ func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
 		}()
 
 		payload := api.MoveTripDraftToPublishModelRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -277,7 +289,8 @@ func TestMoveTripFromDraftToPublished_InvalidStatus(t *testing.T) {
 		require.NoError(t, err)
 
 		payload := api.MoveTripDraftToPublishModelRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)

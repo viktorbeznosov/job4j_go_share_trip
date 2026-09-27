@@ -18,21 +18,20 @@ import (
 )
 
 type MoveFromPublishToStartedRequest struct {
-	Trip      GetTripResponse
-	ClientID  uuid.UUID
-	OldStatus string
-	NewStatus string
+	TripID   uuid.UUID
+	ClientID uuid.UUID
 }
 
 type MoveFromPublishToStartedResponse struct {
-	ID            uuid.UUID
-	DriverID      uuid.UUID
-	FromPoint     string
-	ToPoint       string
-	DepartureTime time.Time
-	Seats         int
-	Status        string
-	CreatedAt     time.Time
+	ID             uuid.UUID
+	DriverID       uuid.UUID
+	FromPoint      string
+	ToPoint        string
+	DepartureTime  time.Time
+	Seats          int
+	Status         string
+	CreatedAt      time.Time
+	AlreadyStarted bool
 }
 
 func (d *TripDomain) MoveFromPublishToStarted(
@@ -46,59 +45,79 @@ func (d *TripDomain) MoveFromPublishToStarted(
 		slog.String("domain", "TripDomain"),
 		slog.String("operation", "MoveFromPublishToStarted"),
 		slog.String("client_id", req.ClientID.String()),
-		slog.String("trip_id", req.Trip.ID.String()),
+		slog.String("trip_id", req.TripID.String()),
 	)
 
-	if req.ClientID != req.Trip.DriverID {
+	trip, err := d.tripRepository.GetByTripID(ctx, req.TripID)
+	if err != nil {
+		logger.Error("failed to get trip", slog.Any("error", err))
+		return nil, err
+	}
+
+	if trip.Status == entity.StatusStarted {
+		logger.Info("trip already started, skipping update")
+		return newMoveFromPublishToStartedResponse(trip, true), nil
+	}
+
+	if trip.Status != entity.StatusPublished {
+		return nil, fmt.Errorf(
+			"%w: invalid trip status: expected %s, got %s",
+			tripErrors.ErrTripNotPublished,
+			entity.StatusPublished,
+			trip.Status,
+		)
+	}
+
+	if req.ClientID != trip.DriverID {
 		logger.Warn("Forbidden: client is not driver",
 			slog.String("client_id", req.ClientID.String()),
-			slog.String("driver_id", req.Trip.DriverID.String()),
+			slog.String("driver_id", trip.DriverID.String()),
 		)
 		return nil, fmt.Errorf("%w: client %s is not the owner of trip %s",
-			tripErrors.ErrDriverNotOwner, req.ClientID, req.Trip.ID)
+			tripErrors.ErrDriverNotOwner, req.ClientID, trip.ID)
 	}
 
-	if req.OldStatus != string(entity.StatusPublished) {
-		return nil, fmt.Errorf("%w: expected %s, got %s",
-			tripErrors.ErrTripNotPublished, entity.StatusPublished, req.OldStatus)
-	}
-
-	if req.NewStatus != string(entity.StatusStarted) {
-		return nil, fmt.Errorf("%w: expected %s, got %s",
-			tripErrors.ErrInvalidStatusTransition, entity.StatusStarted, req.NewStatus)
-	}
-
-	trip, err := storage.Tx(ctx, d.tripRepository.GetDB(), func(tx pgx.Tx) (*entity.Trip, error) {
-		trip, err := d.tripRepository.GetForUpdateByIDWithTX(ctx, tx, req.Trip.ID)
+	alreadyStarted := false
+	updatedTrip, err := storage.Tx(ctx, d.tripRepository.GetDB(), func(tx pgx.Tx) (*entity.Trip, error) {
+		lockedTrip, err := d.tripRepository.GetForUpdateByIDWithTX(ctx, tx, req.TripID)
 		if err != nil {
 			logger.Error("failed to get trip for update", slog.Any("error", err))
 			return nil, err
 		}
 
-		if trip.DriverID != req.ClientID {
+		if lockedTrip.DriverID != req.ClientID {
 			return nil, fmt.Errorf("%w: driver %s is not the owner of trip %s",
-				tripErrors.ErrDriverNotOwner, req.ClientID, trip.ID)
+				tripErrors.ErrDriverNotOwner, req.ClientID, lockedTrip.ID)
 		}
 
-		if string(trip.Status) != req.OldStatus {
-			return nil, fmt.Errorf("%w: expected %s, got %s",
-				tripErrors.ErrTripNotPublished, req.OldStatus, trip.Status)
+		if lockedTrip.Status == entity.StatusStarted {
+			alreadyStarted = true
+			return &lockedTrip, nil
 		}
 
-		oldStatus := trip.Status
-		trip.Status = entity.Status(req.NewStatus)
+		if lockedTrip.Status != entity.StatusPublished {
+			return nil, fmt.Errorf(
+				"%w: invalid trip status: expected %s, got %s",
+				tripErrors.ErrTripNotPublished,
+				entity.StatusPublished,
+				lockedTrip.Status,
+			)
+		}
 
-		if err := d.tripRepository.UpdateTx(ctx, tx, &trip); err != nil {
+		oldStatus := lockedTrip.Status
+		lockedTrip.Status = entity.StatusStarted
+
+		if err := d.tripRepository.UpdateTx(ctx, tx, &lockedTrip); err != nil {
 			logger.Error("failed to update trip in transaction", slog.Any("error", err))
 			return nil, err
 		}
 
-		if err := d.tripRepository.CreateHistoryTx(ctx, tx, trip.ID, &oldStatus, &trip.Status); err != nil {
+		if err := d.tripRepository.CreateHistoryTx(ctx, tx, lockedTrip.ID, &oldStatus, &lockedTrip.Status); err != nil {
 			logger.Error("failed to create history in transaction", slog.Any("error", err))
 			return nil, err
 		}
 
-		payload, err := json.Marshal(trip)
+		payload, err := json.Marshal(lockedTrip)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +125,7 @@ func (d *TripDomain) MoveFromPublishToStarted(
 		event := outbox.Event{
 			ID:          uuid.New(),
 			EventName:   outbox.TripStarted,
-			AggregateID: trip.ID,
+			AggregateID: lockedTrip.ID,
 			Payload:     payload,
 			CreatedAt:   time.Now(),
 		}
@@ -119,7 +138,7 @@ func (d *TripDomain) MoveFromPublishToStarted(
 			return nil, fmt.Errorf("failed to save outbox event: %w", err)
 		}
 
-		return &trip, nil
+		return &lockedTrip, nil
 	})
 
 	if err != nil {
@@ -128,17 +147,25 @@ func (d *TripDomain) MoveFromPublishToStarted(
 	}
 
 	logger.Info("trip moved from publish to started successfully",
-		slog.String("new_status", string(trip.Status)),
+		slog.String("new_status", string(updatedTrip.Status)),
 	)
 
+	return newMoveFromPublishToStartedResponse(updatedTrip, alreadyStarted), nil
+}
+
+func newMoveFromPublishToStartedResponse(
+	trip *entity.Trip,
+	alreadyStarted bool,
+) *MoveFromPublishToStartedResponse {
 	return &MoveFromPublishToStartedResponse{
-		ID:            trip.ID,
-		DriverID:      trip.DriverID,
-		FromPoint:     trip.FromPoint,
-		ToPoint:       trip.ToPoint,
-		DepartureTime: trip.DepartureTime,
-		Seats:         trip.Seats,
-		Status:        string(trip.Status),
-		CreatedAt:     trip.CreatedAt,
-	}, nil
+		ID:             trip.ID,
+		DriverID:       trip.DriverID,
+		FromPoint:      trip.FromPoint,
+		ToPoint:        trip.ToPoint,
+		DepartureTime:  trip.DepartureTime,
+		Seats:          trip.Seats,
+		Status:         string(trip.Status),
+		CreatedAt:      trip.CreatedAt,
+		AlreadyStarted: alreadyStarted,
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"job4j_go_share_trip/config"
 	tripErrors "job4j_go_share_trip/internal/api/errors"
 	"job4j_go_share_trip/internal/business/trip/domain"
 	"job4j_go_share_trip/internal/business/trip/entity"
@@ -20,6 +19,7 @@ import (
 type MoveFromDraftToPublishRequest struct {
 	Trip      GetTripResponse
 	ClientID  uuid.UUID
+	CompanyID uuid.UUID
 	OldStatus string
 	NewStatus string
 }
@@ -43,10 +43,8 @@ func (s *TripService) MoveFromDraftToPublish(ctx context.Context, req MoveFromDr
 		slog.String("trip_id", req.Trip.ID.String()),
 	)
 
-	cfg := config.GetAppConfig()
-
 	tripPublishAllowedResp, err := s.contractClient.CheckService(
-		ctx, cfg.Company.CompanyID, entity.ServiceTripPublish,
+		ctx, req.CompanyID.String(), entity.ServiceTripPublish,
 	)
 	if err != nil {
 		logger.Error("failed to check contract service", slog.Any("error", err))
@@ -103,7 +101,7 @@ func (s *TripService) MoveFromDraftToPublish(ctx context.Context, req MoveFromDr
 			EventType:  events.EventTypeTripPublished,
 			TripID:     domainResp.ID.String(),
 			DriverID:   domainResp.DriverID.String(),
-			CompanyID:  cfg.Company.CompanyID,
+			CompanyID:  req.CompanyID.String(),
 			OccurredAt: time.Now(),
 		}
 		if err := s.tripPublisher.PublishTripPublished(ctx, event); err != nil {

@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/api"
 	tripErrors "job4j_go_share_trip/internal/api/errors"
 	"job4j_go_share_trip/internal/business/trip/domain"
@@ -44,19 +44,9 @@ func newTestTripService(contractClient service.ContractClient) *service.TripServ
 
 func moveFromPublishToStartedRequest(data *TestData) service.MoveFromPublishToStartedRequest {
 	return service.MoveFromPublishToStartedRequest{
-		Trip: service.GetTripResponse{
-			ID:            data.TripID,
-			DriverID:      data.DriverID,
-			FromPoint:     data.Trip.FromPoint,
-			ToPoint:       data.Trip.ToPoint,
-			DepartureTime: data.Trip.DepartureTime,
-			Seats:         data.Trip.Seats,
-			Status:        string(data.Trip.Status),
-			CreatedAt:     data.Trip.CreatedAt,
-		},
+		TripID:    data.TripID,
 		ClientID:  data.DriverID,
-		OldStatus: string(entity.StatusPublished),
-		NewStatus: string(entity.StatusStarted),
+		CompanyID: testCompanyID,
 	}
 }
 
@@ -81,7 +71,8 @@ func TestMoveTripFromPublishToStarted_Success(t *testing.T) {
 		}()
 
 		payload := api.MoveTripFromPublishToStartedRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -118,7 +109,14 @@ func TestMoveTripFromPublishToStarted_Success(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, "Success", response.Status)
-		require.Equal(t, testData.TripID.String(), response.Data.TripID)
+		require.Equal(t, testData.TripID.String(), response.Data.ID)
+		require.Equal(t, driverID.String(), response.Data.DriverID)
+		require.Equal(t, testData.Trip.FromPoint, response.Data.FromPoint)
+		require.Equal(t, testData.Trip.ToPoint, response.Data.ToPoint)
+		require.WithinDuration(t, testData.Trip.DepartureTime, response.Data.DepartureTime, time.Second)
+		require.Equal(t, testData.Trip.Seats, response.Data.Seats)
+		require.Equal(t, string(entity.StatusStarted), response.Data.Status)
+		require.WithinDuration(t, testData.Trip.CreatedAt, response.Data.CreatedAt, time.Second)
 
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
@@ -144,7 +142,8 @@ func TestMoveTripFromPublishToStarted_InvalidStatus(t *testing.T) {
 		}()
 
 		payload := api.MoveTripFromPublishToStartedRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -212,7 +211,8 @@ func TestMoveTripFromPublishToStarted_AlreadyStarted(t *testing.T) {
 		}()
 
 		payload := api.MoveTripFromPublishToStartedRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -269,7 +269,8 @@ func TestMoveTripFromPublishToStarted_DriverNotMatch(t *testing.T) {
 
 		otherClientID := uuid.New()
 		payload := api.MoveTripFromPublishToStartedRequest{
-			TripID: testData.TripID,
+			TripID:    testData.TripID,
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -314,7 +315,8 @@ func TestMoveTripFromPublishToStarted_TripNotFound(t *testing.T) {
 	t.Run("error - поездка не найдена", func(t *testing.T) {
 		driverID := uuid.New()
 		payload := api.MoveTripFromPublishToStartedRequest{
-			TripID: uuid.New(),
+			TripID:    uuid.New(),
+			CompanyID: testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -377,9 +379,8 @@ func TestService_StartTrip_Allowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	contractClient := mocks.NewMockContractClient(ctrl)
 
-	cfg := config.GetAppConfig()
 	contractClient.EXPECT().
-		CheckService(gomock.Any(), cfg.Company.CompanyID, entity.ServiceTripStart).
+		CheckService(gomock.Any(), testCompanyID.String(), entity.ServiceTripStart).
 		Return(contract.CheckResult{Allowed: true, Reason: "service_allowed"}, nil)
 
 	svc := newTestTripService(contractClient)
@@ -413,9 +414,8 @@ func TestService_StartTrip_Denied(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	contractClient := mocks.NewMockContractClient(ctrl)
 
-	cfg := config.GetAppConfig()
 	contractClient.EXPECT().
-		CheckService(gomock.Any(), cfg.Company.CompanyID, entity.ServiceTripStart).
+		CheckService(gomock.Any(), testCompanyID.String(), entity.ServiceTripStart).
 		Return(contract.CheckResult{Allowed: false, Reason: "service_not_allowed"}, nil)
 
 	svc := newTestTripService(contractClient)
@@ -453,9 +453,8 @@ func TestService_StartTrip_Timeout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	contractClient := mocks.NewMockContractClient(ctrl)
 
-	cfg := config.GetAppConfig()
 	contractClient.EXPECT().
-		CheckService(gomock.Any(), cfg.Company.CompanyID, entity.ServiceTripStart).
+		CheckService(gomock.Any(), testCompanyID.String(), entity.ServiceTripStart).
 		Return(contract.CheckResult{}, context.DeadlineExceeded)
 
 	svc := newTestTripService(contractClient)
@@ -471,4 +470,3 @@ func TestService_StartTrip_Timeout(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, entity.StatusPublished, updatedTrip.Status)
 }
-

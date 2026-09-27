@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -19,11 +20,19 @@ import (
 )
 
 type MoveTripDraftToPublishModelRequest struct {
-	TripID uuid.UUID `json:"tripId"`
+	TripID    uuid.UUID `json:"tripId"`
+	CompanyID uuid.UUID `json:"companyId"`
 }
 
 type MoveTripDraftToPublishResponse struct {
-	TripID string `json:"tripId"`
+	ID            string    `json:"id"`
+	DriverID      string    `json:"driverId"`
+	FromPoint     string    `json:"fromPoint"`
+	ToPoint       string    `json:"toPoint"`
+	DepartureTime time.Time `json:"departureTime"`
+	Seats         int       `json:"seats"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
@@ -72,18 +81,19 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 	}
 
 	if tripResp.Status == string(entity.StatusPublished) {
-        return c.SendStatus(fiber.StatusNoContent)
+		return c.SendStatus(fiber.StatusNoContent)
 	}
 
-    if tripResp.Status != string(entity.StatusDraft) {
-        return h.errorMapper.MapConflict(c,
-            fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusDraft, tripResp.Status),
-        )
-    }
+	if tripResp.Status != string(entity.StatusDraft) {
+		return h.errorMapper.MapConflict(c,
+			fmt.Errorf("invalid trip status: expected %s, got %s", entity.StatusDraft, tripResp.Status),
+		)
+	}
 
 	serviceReq := service.MoveFromDraftToPublishRequest{
-		Trip:    *tripResp,
+		Trip:      *tripResp,
 		ClientID:  clientUUID,
+		CompanyID: req.CompanyID,
 		OldStatus: string(entity.StatusDraft),
 		NewStatus: string(entity.StatusPublished),
 	}
@@ -105,7 +115,14 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(Response{
 		Status: "Success",
 		Data: MoveTripDraftToPublishResponse{
-			TripID: serviceResp.ID.String(),
+			ID:            serviceResp.ID.String(),
+			DriverID:      serviceResp.DriverID.String(),
+			FromPoint:     serviceResp.FromPoint,
+			ToPoint:       serviceResp.ToPoint,
+			DepartureTime: serviceResp.DepartureTime,
+			Seats:         serviceResp.Seats,
+			Status:        serviceResp.Status,
+			CreatedAt:     serviceResp.CreatedAt,
 		},
 	})
 }
@@ -117,6 +134,14 @@ func (r *MoveTripDraftToPublishModelRequest) Validate() error {
 
 	if !validators.IsValidUUID(r.TripID.String()) {
 		return tripErrors.ErrInvalidTripID
+	}
+
+	if r.CompanyID == uuid.Nil {
+		return tripErrors.ErrCompanyIDRequired
+	}
+
+	if !validators.IsValidUUID(r.CompanyID.String()) {
+		return tripErrors.ErrInvalidCompanyID
 	}
 
 	return nil

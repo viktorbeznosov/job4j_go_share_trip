@@ -7,7 +7,6 @@ type AppConfig struct {
 	Tracing        TracingConfigSection
 	Server         ServerConfigSection
 	ContractClient ContractClientSection
-	Company        CompanySection
 	Kafka          KafkaConfigSection
 }
 
@@ -46,10 +45,6 @@ type ContractClientSection struct {
 	BaseUrl string `json:"baseUrl"`
 	TimeOut int    `json:"timeout"`
 	Retry   int    `json:"retry"`
-}
-
-type CompanySection struct {
-	CompanyID string `json:"companyId"`
 }
 
 type ServerConfigSection struct {
@@ -97,9 +92,6 @@ func GetAppConfig() AppConfig {
 			BaseUrl: Env("CONTRACT_SERVICE_BASE_URL", "http://localhost:8082"),
 			TimeOut: EnvInt("CONTRACT_SERVICE_TIME_OUT", 2),
 			Retry:   EnvInt("CONTRACT_SERVICE_RETRY_COUNT", 2),
-		},
-		Company: CompanySection{
-			CompanyID: Env("COMPANY_ID", "11111111-1111-1111-1111-111111111111"),
 		},
 		Kafka: KafkaConfigSection{
 			Brokers:         Env("KAFKA_BROKERS", "localhost:9092"),

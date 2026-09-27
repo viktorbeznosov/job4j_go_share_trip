@@ -5,18 +5,20 @@ import (
 )
 
 var (
-	ErrFromPointRequired = errors.New("from point is required")
-	ErrToPointRequired = errors.New("to point is required")
-	ErrDepartureTimeRequired = errors.New("departure time is required")
-	ErrInvalidDateFormat = errors.New("departure time must be in format '2006-01-02 15:04'")
-	ErrDepartureTimePast = errors.New("departure time cannot be in the past")
-	ErrInvalidSeats = errors.New("seats must be greater than 0")
-	ErrSeatsTooHigh = errors.New("seats cannot exceed 10")
-	ErrTripIDRequired = errors.New("trip id is required")
-	ErrInvalidTripID = errors.New("trip id must be a valid UUID")
-	ErrDriverIDRequired = errors.New("driver id is required")
+	ErrFromPointRequired       = errors.New("from point is required")
+	ErrToPointRequired         = errors.New("to point is required")
+	ErrDepartureTimeRequired   = errors.New("departure time is required")
+	ErrInvalidDateFormat       = errors.New("departure time must be in format '2006-01-02 15:04'")
+	ErrDepartureTimePast       = errors.New("departure time cannot be in the past")
+	ErrInvalidSeats            = errors.New("seats must be greater than 0")
+	ErrSeatsTooHigh            = errors.New("seats cannot exceed 10")
+	ErrTripIDRequired          = errors.New("trip id is required")
+	ErrInvalidTripID           = errors.New("trip id must be a valid UUID")
+	ErrCompanyIDRequired       = errors.New("company id is required")
+	ErrInvalidCompanyID        = errors.New("company id must be a valid UUID")
+	ErrDriverIDRequired        = errors.New("driver id is required")
 	ErrTripPublishIsNotAllowed = errors.New("trip publish is not allowed")
-	ErrTripStartIsNotAllowed = errors.New("trip start is not allowed")
+	ErrTripStartIsNotAllowed   = errors.New("trip start is not allowed")
 )
 
 var (
@@ -25,12 +27,12 @@ var (
 
 var (
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
-	ErrInvalidStatus = errors.New("invalid status")
-	ErrUnknownStatus = errors.New("unknown status")
-	ErrTripAlreadyPublished = errors.New("trip already published")
-	ErrTripNotDraft = errors.New("trip is not in draft status")
-	ErrTripNotPublished = errors.New("trip is not in published status")
-	ErrDriverNotOwner = errors.New("driver is not the owner of the trip")
+	ErrInvalidStatus           = errors.New("invalid status")
+	ErrUnknownStatus           = errors.New("unknown status")
+	ErrTripAlreadyPublished    = errors.New("trip already published")
+	ErrTripNotDraft            = errors.New("trip is not in draft status")
+	ErrTripNotPublished        = errors.New("trip is not in published status")
+	ErrDriverNotOwner          = errors.New("driver is not the owner of the trip")
 )
 
 var (
@@ -57,6 +59,10 @@ func GetErrorMessage(err error) string {
 		return "Trip ID is required"
 	case errors.Is(err, ErrInvalidTripID):
 		return "Trip ID must be a valid UUID"
+	case errors.Is(err, ErrCompanyIDRequired):
+		return "Company ID is required"
+	case errors.Is(err, ErrInvalidCompanyID):
+		return "Company ID must be a valid UUID"
 	case errors.Is(err, ErrDriverIDRequired):
 		return "Driver ID is required"
 	case errors.Is(err, ErrTripNotFound):
@@ -73,8 +79,8 @@ func GetErrorMessage(err error) string {
 		return "Trip is not in draft status"
 	case errors.Is(err, ErrTripNotPublished):
 		return "Trip is not in published status"
-    case errors.Is(err, ErrDriverNotOwner):
-        return "Client is not driver of this trip"
+	case errors.Is(err, ErrDriverNotOwner):
+		return "Client is not driver of this trip"
 	case errors.Is(err, ErrTripPublishIsNotAllowed):
 		return "Publish trips is not allowed for this company"
 	case errors.Is(err, ErrTripStartIsNotAllowed):
@@ -112,6 +118,8 @@ func GetHTTPStatus(err error) int {
 		errors.Is(err, ErrSeatsTooHigh),
 		errors.Is(err, ErrTripIDRequired),
 		errors.Is(err, ErrInvalidTripID),
+		errors.Is(err, ErrCompanyIDRequired),
+		errors.Is(err, ErrInvalidCompanyID),
 		errors.Is(err, ErrDriverIDRequired):
 		return 400
 
