@@ -72,13 +72,11 @@ func (d *TripDomain) Create(ctx context.Context, req CreateTripRequest) (*Create
 			return err
 		}
 
-		event := outbox.Event{
-			ID:          uuid.New(),
-			EventName:   outbox.TripCreated,
-			AggregateID: trip.ID,
-			Payload:     payload,
-			CreatedAt:   time.Now(),
-		}
+		event := outbox.NewPendingEvent(
+			outbox.EventTypeTripCreated,
+			trip.ID,
+			payload,
+		)
 
 		if err := d.eventRepository.SaveTx(ctx, tx, &event); err != nil {
 			logger.Error("failed to save outbox event", slog.Any("error", err))

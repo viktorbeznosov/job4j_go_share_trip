@@ -1,4 +1,3 @@
-// internal/platform/outbox/event.go
 package outbox
 
 import (
@@ -7,18 +6,53 @@ import (
 	"github.com/google/uuid"
 )
 
-type EventName string
+type AggregateType string
+
+type EventType string
+
+type Status string
 
 const (
-    TripCreated EventName = "trip_created"
-    TripPublished EventName = "trip_published"
-    TripStarted EventName = "trip_started"
+	AggregateTypeTrip AggregateType = "trip"
+)
+
+const (
+	EventTypeTripCreated   EventType = "trip_created"
+	EventTypeTripPublished EventType = "trip_published"
+	EventTypeTripStarted   EventType = "trip_started"
+)
+
+const (
+	StatusPending Status = "pending"
+	StatusSent    Status = "sent"
+	StatusFailed  Status = "failed"
 )
 
 type Event struct {
-	ID          uuid.UUID
-	EventName   EventName
-	AggregateID uuid.UUID
-	Payload     []byte
-	CreatedAt   time.Time
+	ID            uuid.UUID
+	AggregateType AggregateType
+	AggregateID   uuid.UUID
+	EventType     EventType
+	Payload       []byte
+	Status        Status
+	Attempts      int
+	LastError     *string
+	CreatedAt     time.Time
+	SentAt        *time.Time
+}
+
+func NewPendingEvent(
+	eventType EventType,
+	aggregateID uuid.UUID,
+	payload []byte,
+) Event {
+	return Event{
+		ID:            uuid.New(),
+		AggregateType: AggregateTypeTrip,
+		AggregateID:   aggregateID,
+		EventType:     eventType,
+		Payload:       payload,
+		Status:        StatusPending,
+		CreatedAt:     time.Now(),
+	}
 }

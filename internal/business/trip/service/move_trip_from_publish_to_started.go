@@ -67,8 +67,9 @@ func (s *TripService) MoveFromPublishToStarted(ctx context.Context, req MoveFrom
 	logger.Info("move from publish to started started")
 
 	domainReq := domain.MoveFromPublishToStartedRequest{
-		TripID:   req.TripID,
-		ClientID: req.ClientID,
+		TripID:    req.TripID,
+		ClientID:  req.ClientID,
+		CompanyID: req.CompanyID,
 	}
 
 	domainResp, err := s.tripDomain.MoveFromPublishToStarted(ctx, domainReq)

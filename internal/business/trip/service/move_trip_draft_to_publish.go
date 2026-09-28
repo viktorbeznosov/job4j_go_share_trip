@@ -9,7 +9,6 @@ import (
 	tripErrors "job4j_go_share_trip/internal/api/errors"
 	"job4j_go_share_trip/internal/business/trip/domain"
 	"job4j_go_share_trip/internal/business/trip/entity"
-	"job4j_go_share_trip/internal/events"
 	"job4j_go_share_trip/internal/observability/logctx"
 
 	"github.com/google/uuid"
@@ -82,6 +81,7 @@ func (s *TripService) MoveFromDraftToPublish(ctx context.Context, req MoveFromDr
 	domainReq := domain.MoveFromDraftToPublishRequest{
 		Trip:      domainTrip,
 		ClientID:  req.ClientID,
+		CompanyID: req.CompanyID,
 		OldStatus: req.OldStatus,
 		NewStatus: req.NewStatus,
 	}
@@ -94,22 +94,6 @@ func (s *TripService) MoveFromDraftToPublish(ctx context.Context, req MoveFromDr
 	}
 
 	logger.Info("update trip completed", slog.String("new_status", string(domainResp.Status)))
-
-	if s.tripPublisher != nil {
-		event := events.TripPublished{
-			EventID:    uuid.New().String(),
-			EventType:  events.EventTypeTripPublished,
-			TripID:     domainResp.ID.String(),
-			DriverID:   domainResp.DriverID.String(),
-			CompanyID:  req.CompanyID.String(),
-			OccurredAt: time.Now(),
-		}
-		if err := s.tripPublisher.PublishTripPublished(ctx, event); err != nil {
-			logger.Error("failed to publish trip_published event", slog.Any("error", err))
-			result = "error"
-			return nil, fmt.Errorf("failed to publish trip_published event: %w", err)
-		}
-	}
 
 	return &MoveFromDraftToPublishResponse{
 		ID:            domainResp.ID,

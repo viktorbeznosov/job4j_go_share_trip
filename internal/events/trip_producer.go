@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -22,6 +23,37 @@ type TripPublished struct {
 	DriverID   string    `json:"driver_id"`
 	CompanyID  string    `json:"company_id"`
 	OccurredAt time.Time `json:"occurred_at"`
+}
+
+type TripStarted struct {
+	EventID    string    `json:"event_id"`
+	EventType  EventType `json:"event_type"`
+	TripID     string    `json:"trip_id"`
+	DriverID   string    `json:"driver_id"`
+	CompanyID  string    `json:"company_id"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+func NewTripPublished(eventID uuid.UUID, tripID, driverID, companyID uuid.UUID, occurredAt time.Time) TripPublished {
+	return TripPublished{
+		EventID:    eventID.String(),
+		EventType:  EventTypeTripPublished,
+		TripID:     tripID.String(),
+		DriverID:   driverID.String(),
+		CompanyID:  companyID.String(),
+		OccurredAt: occurredAt,
+	}
+}
+
+func NewTripStarted(eventID uuid.UUID, tripID, driverID, companyID uuid.UUID, occurredAt time.Time) TripStarted {
+	return TripStarted{
+		EventID:    eventID.String(),
+		EventType:  EventTypeTripStarted,
+		TripID:     tripID.String(),
+		DriverID:   driverID.String(),
+		CompanyID:  companyID.String(),
+		OccurredAt: occurredAt,
+	}
 }
 
 type Producer struct {

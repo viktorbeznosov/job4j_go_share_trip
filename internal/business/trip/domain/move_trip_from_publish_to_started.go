@@ -12,14 +12,16 @@ import (
 
 	tripErrors "job4j_go_share_trip/internal/api/errors"
 	"job4j_go_share_trip/internal/business/trip/entity"
+	"job4j_go_share_trip/internal/events"
 	"job4j_go_share_trip/internal/observability/logctx"
 	"job4j_go_share_trip/internal/shared/outbox"
 	"job4j_go_share_trip/internal/storage"
 )
 
 type MoveFromPublishToStartedRequest struct {
-	TripID   uuid.UUID
-	ClientID uuid.UUID
+	TripID    uuid.UUID
+	ClientID  uuid.UUID
+	CompanyID uuid.UUID
 }
 
 type MoveFromPublishToStartedResponse struct {
@@ -117,18 +119,24 @@ func (d *TripDomain) MoveFromPublishToStarted(
 			return nil, err
 		}
 
-		payload, err := json.Marshal(lockedTrip)
+		eventID := uuid.New()
+		payload, err := json.Marshal(events.NewTripStarted(
+			eventID,
+			lockedTrip.ID,
+			lockedTrip.DriverID,
+			req.CompanyID,
+			time.Now(),
+		))
 		if err != nil {
 			return nil, err
 		}
 
-		event := outbox.Event{
-			ID:          uuid.New(),
-			EventName:   outbox.TripStarted,
-			AggregateID: lockedTrip.ID,
-			Payload:     payload,
-			CreatedAt:   time.Now(),
-		}
+		event := outbox.NewPendingEvent(
+			outbox.EventTypeTripStarted,
+			lockedTrip.ID,
+			payload,
+		)
+		event.ID = eventID
 
 		if err := d.eventRepository.SaveTx(ctx, tx, &event); err != nil {
 			logger.Error("failed to save outbox event", slog.Any("error", err))

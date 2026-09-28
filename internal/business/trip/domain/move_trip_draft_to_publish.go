@@ -12,6 +12,7 @@ import (
 
 	tripErrors "job4j_go_share_trip/internal/api/errors"
 	"job4j_go_share_trip/internal/business/trip/entity"
+	"job4j_go_share_trip/internal/events"
 	"job4j_go_share_trip/internal/observability/logctx"
 	"job4j_go_share_trip/internal/shared/outbox"
 	"job4j_go_share_trip/internal/storage"
@@ -20,6 +21,7 @@ import (
 type MoveFromDraftToPublishRequest struct {
 	Trip      GetTripResponse
 	ClientID  uuid.UUID
+	CompanyID uuid.UUID
 	OldStatus string
 	NewStatus string
 }
@@ -103,18 +105,24 @@ func (d *TripDomain) MoveFromDraftToPublish(
 			return nil, err
 		}
 
-		payload, err := json.Marshal(trip)
+		eventID := uuid.New()
+		payload, err := json.Marshal(events.NewTripPublished(
+			eventID,
+			trip.ID,
+			trip.DriverID,
+			req.CompanyID,
+			time.Now(),
+		))
 		if err != nil {
 			return nil, err
 		}
 
-		event := outbox.Event{
-			ID:          uuid.New(),
-			EventName:   outbox.TripPublished,
-			AggregateID: trip.ID,
-			Payload:     payload,
-			CreatedAt:   time.Now(),
-		}
+		event := outbox.NewPendingEvent(
+			outbox.EventTypeTripPublished,
+			trip.ID,
+			payload,
+		)
+		event.ID = eventID
 
 		if err := d.eventRepository.SaveTx(ctx, tx, &event); err != nil {
 			logger.Error("failed to save outbox event", slog.Any("error", err))

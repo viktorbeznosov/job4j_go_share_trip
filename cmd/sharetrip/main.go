@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"job4j_go_share_trip/config"
@@ -16,6 +19,7 @@ import (
 	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/metrics"
 	"job4j_go_share_trip/internal/observability/tracing"
+	"job4j_go_share_trip/internal/shared/outbox"
 	"job4j_go_share_trip/internal/storage"
 
 	"github.com/gofiber/fiber/v2"
@@ -24,7 +28,8 @@ import (
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// Загружаем .env файл
 	if err := godotenv.Load("./.env"); err != nil {
@@ -96,6 +101,15 @@ func main() {
 		}
 	}()
 
+	outboxRepo := outbox.NewEventRepository(pool, m)
+	outboxPublisher := events.NewPublisher(outboxRepo, tripProducer, logger)
+
+	go func() {
+		if err := outboxPublisher.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("outbox publisher stopped", "error", err)
+		}
+	}()
+
 	server := api.NewServer(pool, registry, m, contractClient, tripProducer)
 
 	app := fiber.New()
@@ -112,6 +126,15 @@ func main() {
 	))
 
 	server.Route(app.Group("/api"))
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+			logger.Error("shutdown http failed", "error", err)
+		}
+	}()
 
 	err = app.Listen(fmt.Sprintf(":%d", cfg.Server.Port))
 	if err != nil {
