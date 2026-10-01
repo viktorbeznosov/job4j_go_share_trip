@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -108,15 +107,20 @@ func TestMoveTripFromPublishToStarted_Success(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&response)
 		require.NoError(t, err)
 
-		require.Equal(t, "Success", response.Status)
-		require.Equal(t, testData.TripID.String(), response.Data.ID)
-		require.Equal(t, driverID.String(), response.Data.DriverID)
-		require.Equal(t, testData.Trip.FromPoint, response.Data.FromPoint)
-		require.Equal(t, testData.Trip.ToPoint, response.Data.ToPoint)
-		require.WithinDuration(t, testData.Trip.DepartureTime, response.Data.DepartureTime, time.Second)
-		require.Equal(t, testData.Trip.Seats, response.Data.Seats)
-		require.Equal(t, string(entity.StatusStarted), response.Data.Status)
-		require.WithinDuration(t, testData.Trip.CreatedAt, response.Data.CreatedAt, time.Second)
+		expected := api.MoveTripFromPublishToStartedResponseWrapper{
+			Status: "Success",
+			Data: api.MoveTripFromPublishToStartedResponse{
+				ID:            testData.TripID.String(),
+				DriverID:      driverID.String(),
+				FromPoint:     testData.Trip.FromPoint,
+				ToPoint:       testData.Trip.ToPoint,
+				Seats:         testData.Trip.Seats,
+				Status:        string(entity.StatusStarted),
+				CreatedAt:     response.Data.CreatedAt,
+				DepartureTime: response.Data.DepartureTime,
+			},
+		}
+		assert.Equal(t, expected, response)
 
 		m := getTestMetrics()
 		tripRepo := repository.NewPostgresRepository(testPool, m)
@@ -352,8 +356,11 @@ func TestMoveTripFromPublishToStarted_TripNotFound(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&response)
 		require.NoError(t, err)
 
-		require.Equal(t, "Error", response.Status)
-		require.Equal(t, "trip not found", response.Message)
+		expected := api.ErrorResponseWrapper{
+			Status:  "Error",
+			Message: "trip not found",
+		}
+		assert.Equal(t, expected, response)
 	})
 }
 
@@ -389,7 +396,19 @@ func TestService_StartTrip_Allowed(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, string(entity.StatusStarted), resp.Status)
+
+	expected := service.MoveFromPublishToStartedResponse{
+		ID:             testData.TripID,
+		DriverID:       driverID,
+		FromPoint:      testData.Trip.FromPoint,
+		ToPoint:        testData.Trip.ToPoint,
+		Seats:          testData.Trip.Seats,
+		Status:         string(entity.StatusStarted),
+		CreatedAt:      resp.CreatedAt,
+		DepartureTime:  resp.DepartureTime,
+		AlreadyStarted: false,
+	}
+	assert.Equal(t, expected, *resp)
 }
 
 func TestService_StartTrip_Denied(t *testing.T) {
