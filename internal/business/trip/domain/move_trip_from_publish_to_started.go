@@ -119,24 +119,18 @@ func (d *TripDomain) MoveFromPublishToStarted(
 			return nil, err
 		}
 
-		eventID := uuid.New()
+		event := outbox.NewPendingEvent(outbox.EventTypeTripStarted, lockedTrip.ID, nil)
 		payload, err := json.Marshal(events.NewTripStarted(
-			eventID,
+			event.ID,
 			lockedTrip.ID,
 			lockedTrip.DriverID,
 			req.CompanyID,
-			time.Now(),
+			event.CreatedAt,
 		))
 		if err != nil {
 			return nil, err
 		}
-
-		event := outbox.NewPendingEvent(
-			outbox.EventTypeTripStarted,
-			lockedTrip.ID,
-			payload,
-		)
-		event.ID = eventID
+		event.Payload = payload
 
 		if err := d.eventRepository.SaveTx(ctx, tx, &event); err != nil {
 			logger.Error("failed to save outbox event", slog.Any("error", err))

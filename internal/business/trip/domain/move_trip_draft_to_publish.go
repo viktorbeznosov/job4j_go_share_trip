@@ -105,24 +105,18 @@ func (d *TripDomain) MoveFromDraftToPublish(
 			return nil, err
 		}
 
-		eventID := uuid.New()
+		event := outbox.NewPendingEvent(outbox.EventTypeTripPublished, trip.ID, nil)
 		payload, err := json.Marshal(events.NewTripPublished(
-			eventID,
+			event.ID,
 			trip.ID,
 			trip.DriverID,
 			req.CompanyID,
-			time.Now(),
+			event.CreatedAt,
 		))
 		if err != nil {
 			return nil, err
 		}
-
-		event := outbox.NewPendingEvent(
-			outbox.EventTypeTripPublished,
-			trip.ID,
-			payload,
-		)
-		event.ID = eventID
+		event.Payload = payload
 
 		if err := d.eventRepository.SaveTx(ctx, tx, &event); err != nil {
 			logger.Error("failed to save outbox event", slog.Any("error", err))
