@@ -3,6 +3,8 @@ coverage.out
 .idea
 .vscode
 .env
+k8s/*-secret.yaml
+!k8s/*-secret.example.yaml
 
 /logs
 *.log

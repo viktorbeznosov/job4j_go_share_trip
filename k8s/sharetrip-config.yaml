@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sharetrip-config
+  namespace: sharetrip
+data:
+  HTTP_PORT: "8080"
+  CONTRACT_SERVICE_URL: "http://contract-service:8080"
+  KAFKA_BROKERS: "kafka:9092"
+  TRIP_EVENTS_TOPIC: "trip-events"
+  REQUEST_TIMEOUT_MS: "1500"
+  RETRY_ATTEMPTS: "2"
+  LOG_LEVEL: "info"
+  KEYCLOAK_ISSUER: "http://keycloak:8080/realms/sharetrip"
+  KEYCLOAK_CLIENT_ID: "sharetrip-api"
