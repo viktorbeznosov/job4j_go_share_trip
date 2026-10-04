@@ -34,6 +34,7 @@ type Event struct {
 	AggregateID   uuid.UUID
 	EventType     EventType
 	Payload       []byte
+	Metadata      []byte
 	Status        Status
 	Attempts      int
 	LastError     *string
@@ -52,6 +53,7 @@ func NewPendingEvent(
 		AggregateID:   aggregateID,
 		EventType:     eventType,
 		Payload:       payload,
+		Metadata:      []byte("{}"),
 		Status:        StatusPending,
 		CreatedAt:     time.Now(),
 	}

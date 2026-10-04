@@ -60,11 +60,17 @@ func (r *EventRepository) saveTx(ctx context.Context, db Querier, event *Event) 
 			aggregate_id,
 			event_type,
 			payload,
+			metadata,
 			status,
 			attempts,
 			created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
+
+	metadata := event.Metadata
+	if len(metadata) == 0 {
+		metadata = []byte("{}")
+	}
 
 	_, err := db.Exec(
 		ctx,
@@ -74,6 +80,7 @@ func (r *EventRepository) saveTx(ctx context.Context, db Querier, event *Event) 
 		event.AggregateID,
 		event.EventType,
 		event.Payload,
+		metadata,
 		event.Status,
 		event.Attempts,
 		event.CreatedAt,
@@ -107,6 +114,7 @@ func (r *EventRepository) lockPending(ctx context.Context, limit int) ([]Event, 
 			aggregate_id,
 			event_type,
 			payload,
+			metadata,
 			status,
 			attempts,
 			last_error,
@@ -134,6 +142,7 @@ func (r *EventRepository) lockPending(ctx context.Context, limit int) ([]Event, 
 			&event.AggregateID,
 			&event.EventType,
 			&event.Payload,
+			&event.Metadata,
 			&event.Status,
 			&event.Attempts,
 			&event.LastError,
@@ -146,6 +155,18 @@ func (r *EventRepository) lockPending(ctx context.Context, limit int) ([]Event, 
 	}
 
 	return events, rows.Err()
+}
+
+func (r *EventRepository) CountPending(ctx context.Context) (int, error) {
+	const query = `
+		SELECT COUNT(*)
+		FROM public.outbox_events
+		WHERE status = $1
+	`
+
+	var count int
+	err := r.db.QueryRow(ctx, query, StatusPending).Scan(&count)
+	return count, err
 }
 
 func (r *EventRepository) MarkSent(ctx context.Context, id uuid.UUID) error {

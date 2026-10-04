@@ -15,6 +15,13 @@ type Metrics struct {
 	TripPublishTotal    *prometheus.CounterVec
 	TripPublishDuration *prometheus.HistogramVec
 
+	ContractRequestTotal    *prometheus.CounterVec
+	ContractRequestDuration *prometheus.HistogramVec
+
+	OutboxPendingTotal       prometheus.Gauge
+	OutboxPublishTotal       *prometheus.CounterVec
+	OutboxPublishFailedTotal prometheus.Counter
+
 	RepositoryQueryTotal    *prometheus.CounterVec
 	RepositoryQueryDuration *prometheus.HistogramVec
 }
@@ -81,6 +88,45 @@ func New(reg prometheus.Registerer) *Metrics {
 			[]string{"result"},
 		),
 
+		ContractRequestTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "sharetrip",
+				Name:      "contract_request_total",
+				Help:      "Total number of contract permission checks",
+			},
+			[]string{"result"},
+		),
+		ContractRequestDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: "sharetrip",
+				Name:      "contract_request_duration_seconds",
+				Help:      "Duration of contract permission checks in seconds",
+				Buckets:   prometheus.DefBuckets,
+			},
+			[]string{"result"},
+		),
+		OutboxPendingTotal: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: "sharetrip",
+				Name:      "outbox_pending_total",
+				Help:      "Number of pending outbox events",
+			},
+		),
+		OutboxPublishTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "sharetrip",
+				Name:      "outbox_publish_total",
+				Help:      "Total number of outbox publish attempts",
+			},
+			[]string{"result"},
+		),
+		OutboxPublishFailedTotal: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: "sharetrip",
+				Name:      "outbox_publish_failed_total",
+				Help:      "Total number of failed outbox publishes to Kafka",
+			},
+		),
 		RepositoryQueryTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "sharetrip",
@@ -112,6 +158,11 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.TripCreateDuration,
 		m.TripPublishTotal,
 		m.TripPublishDuration,
+		m.ContractRequestTotal,
+		m.ContractRequestDuration,
+		m.OutboxPendingTotal,
+		m.OutboxPublishTotal,
+		m.OutboxPublishFailedTotal,
 		m.RepositoryQueryTotal,
 		m.RepositoryQueryDuration,
 	)

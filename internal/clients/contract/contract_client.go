@@ -9,6 +9,8 @@ import (
 	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/clients"
+	"job4j_go_share_trip/internal/middleware"
+	"job4j_go_share_trip/internal/observability/logctx"
 )
 
 type ClientInterface interface {
@@ -48,10 +50,27 @@ func (c *Client) CheckService(ctx context.Context, companyID string, serviceCode
 
 	url := fmt.Sprintf("/api/companies/%s/services/%s/availability", companyID, serviceCode)
 
-	resp, err := c.http.R().
+	req := c.http.R().
 		SetContext(ctx).
-		SetResult(&response).
-		Get(url)
+		SetResult(&response)
+
+	if requestID := logctx.RequestID(ctx); requestID != "" {
+		req.SetHeader(middleware.RequestIDHeader, requestID)
+	}
+	if correlationID := logctx.CorrelationID(ctx); correlationID != "" {
+		req.SetHeader(middleware.CorrelationIDHeader, correlationID)
+	}
+	if traceparent := logctx.Traceparent(ctx); traceparent != "" {
+		req.SetHeader(middleware.TraceparentHeader, traceparent)
+	}
+	if tripID := logctx.TripID(ctx); tripID != "" {
+		req.SetHeader(middleware.TripIDHeader, tripID)
+	}
+	if userID := logctx.UserID(ctx); userID != "" {
+		req.SetHeader(middleware.UserIDHeader, userID)
+	}
+
+	resp, err := req.Get(url)
 
 	if err != nil {
 		return CheckResult{}, fmt.Errorf("failed to check service: %w", err)

@@ -17,42 +17,86 @@ const (
 )
 
 type TripPublished struct {
-	EventID    string    `json:"event_id"`
-	EventType  EventType `json:"event_type"`
-	TripID     string    `json:"trip_id"`
-	DriverID   string    `json:"driver_id"`
-	CompanyID  string    `json:"company_id"`
-	OccurredAt time.Time `json:"occurred_at"`
+	EventID       string    `json:"event_id"`
+	EventType     EventType `json:"event_type"`
+	TripID        string    `json:"trip_id"`
+	DriverID      string    `json:"driver_id"`
+	CompanyID     string    `json:"company_id"`
+	CorrelationID string    `json:"correlation_id,omitempty"`
+	CausationID   string    `json:"causation_id,omitempty"`
+	Traceparent   string    `json:"traceparent,omitempty"`
+	OccurredAt    time.Time `json:"occurred_at"`
 }
 
 type TripStarted struct {
-	EventID    string    `json:"event_id"`
-	EventType  EventType `json:"event_type"`
-	TripID     string    `json:"trip_id"`
-	DriverID   string    `json:"driver_id"`
-	CompanyID  string    `json:"company_id"`
-	OccurredAt time.Time `json:"occurred_at"`
+	EventID       string    `json:"event_id"`
+	EventType     EventType `json:"event_type"`
+	TripID        string    `json:"trip_id"`
+	DriverID      string    `json:"driver_id"`
+	CompanyID     string    `json:"company_id"`
+	CorrelationID string    `json:"correlation_id,omitempty"`
+	CausationID   string    `json:"causation_id,omitempty"`
+	Traceparent   string    `json:"traceparent,omitempty"`
+	OccurredAt    time.Time `json:"occurred_at"`
 }
 
-func NewTripPublished(eventID uuid.UUID, tripID, driverID, companyID uuid.UUID, occurredAt time.Time) TripPublished {
+func NewTripPublished(
+	eventID uuid.UUID,
+	tripID, driverID, companyID uuid.UUID,
+	occurredAt time.Time,
+	meta EventMetadata,
+) TripPublished {
 	return TripPublished{
-		EventID:    eventID.String(),
-		EventType:  EventTypeTripPublished,
-		TripID:     tripID.String(),
-		DriverID:   driverID.String(),
-		CompanyID:  companyID.String(),
-		OccurredAt: occurredAt,
+		EventID:       eventID.String(),
+		EventType:     EventTypeTripPublished,
+		TripID:        tripID.String(),
+		DriverID:      driverID.String(),
+		CompanyID:     companyID.String(),
+		CorrelationID: meta.CorrelationID,
+		CausationID:   meta.CausationID,
+		Traceparent:   meta.Traceparent,
+		OccurredAt:    occurredAt,
 	}
 }
 
-func NewTripStarted(eventID uuid.UUID, tripID, driverID, companyID uuid.UUID, occurredAt time.Time) TripStarted {
+func (e TripPublished) Metadata() EventMetadata {
+	return EventMetadata{
+		EventID:       e.EventID,
+		EventType:     e.EventType,
+		CorrelationID: e.CorrelationID,
+		CausationID:   e.CausationID,
+		Traceparent:   e.Traceparent,
+		OccurredAt:    e.OccurredAt,
+	}
+}
+
+func NewTripStarted(
+	eventID uuid.UUID,
+	tripID, driverID, companyID uuid.UUID,
+	occurredAt time.Time,
+	meta EventMetadata,
+) TripStarted {
 	return TripStarted{
-		EventID:    eventID.String(),
-		EventType:  EventTypeTripStarted,
-		TripID:     tripID.String(),
-		DriverID:   driverID.String(),
-		CompanyID:  companyID.String(),
-		OccurredAt: occurredAt,
+		EventID:       eventID.String(),
+		EventType:     EventTypeTripStarted,
+		TripID:        tripID.String(),
+		DriverID:      driverID.String(),
+		CompanyID:     companyID.String(),
+		CorrelationID: meta.CorrelationID,
+		CausationID:   meta.CausationID,
+		Traceparent:   meta.Traceparent,
+		OccurredAt:    occurredAt,
+	}
+}
+
+func (e TripStarted) Metadata() EventMetadata {
+	return EventMetadata{
+		EventID:       e.EventID,
+		EventType:     e.EventType,
+		CorrelationID: e.CorrelationID,
+		CausationID:   e.CausationID,
+		Traceparent:   e.Traceparent,
+		OccurredAt:    e.OccurredAt,
 	}
 }
 
@@ -77,8 +121,22 @@ func (p *Producer) PublishTripPublished(ctx context.Context, event TripPublished
 	}
 
 	return p.writer.WriteMessages(ctx, kafka.Message{
-		Key:   []byte(event.TripID),
-		Value: data,
+		Key:     []byte(event.TripID),
+		Value:   data,
+		Headers: event.Metadata().KafkaHeaders(),
+	})
+}
+
+func (p *Producer) PublishTripStarted(ctx context.Context, event TripStarted) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	return p.writer.WriteMessages(ctx, kafka.Message{
+		Key:     []byte(event.TripID),
+		Value:   data,
+		Headers: event.Metadata().KafkaHeaders(),
 	})
 }
 

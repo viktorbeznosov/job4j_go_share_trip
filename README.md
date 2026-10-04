@@ -552,6 +552,35 @@ end note
 @enduml
 ```
 
+## Как расследовать: уведомление не пришло
+
+Сценарий: пользователь опубликовал поездку, но уведомление не пришло. Смотрим не один сервис, а весь процесс:
+
+`user -> sharetrip -> contract -> outbox -> kafka -> notification -> inbox`
+
+1. Найти HTTP-запрос в логах ShareTrip по `request_id` или `trip_id`.
+2. Проверить вызов contract: заголовки `X-Request-ID`, `X-Correlation-ID`, `traceparent`.
+3. В логах contract найти `operation=CheckPermission` с тем же `correlation_id`. `result=allowed` — проверка прошла; `denied` / `error` — события быть не должно.
+4. Проверить, что поездка стала `published`.
+5. Взять `event_id` из лога `operation=OutboxInsert`.
+6. Проверить `outbox_events`: `status` (`pending` / `sent` / `failed`) и `metadata`.
+7. Проверить публикацию в Kafka: `operation=OutboxPublish`, метрики `sharetrip_outbox_pending_total` и `sharetrip_outbox_publish_failed_total`.
+8. Проверить lag consumer group `notification-service` по topic событий поездок.
+9. В логах notification найти событие по `event_id` (`correlation_id`, `causation_id`, `trace_id`).
+10. Проверить inbox: `operation=InboxInsert`, `result=created` или `duplicate`.
+11. Проверить отправку: `operation=SendNotification`, `result=sent`. Смотреть `notification_send_total{result="error"}`.
+12. Если отправка упала, искать ошибку провайдера. Токены и секреты в логи не писать.
+
+Идентификаторы:
+
+- `request_id` — входящий HTTP-запрос (`X-Request-ID`);
+- `correlation_id` — процесс публикации (`X-Correlation-ID`, по умолчанию равен `request_id`);
+- `traceparent` / `trace_id` — распределённая трасса;
+- `event_id` — событие в outbox, Kafka headers и inbox;
+- `causation_id` — причина события (для `TripPublished` это `request_id`).
+
+Dashboard: Grafana → ShareTrip → **Trip publication**.
+
 ## Статус проекта
 
 Проект находится на стадии доменного анализа и формализации правил. Техническая реализация не входит в рамки текущего этапа.

@@ -44,16 +44,32 @@ func (s *TripService) MoveFromPublishToStarted(ctx context.Context, req MoveFrom
 		slog.String("trip_id", req.TripID.String()),
 	)
 
+	ctx = logctx.WithTripID(ctx, req.TripID.String())
+	ctx = logctx.WithUserID(ctx, req.ClientID.String())
+
+	contractStarted := time.Now()
+	contractResult := "success"
 	tripStartAllowedResp, err := s.contractClient.CheckService(
 		ctx, req.CompanyID.String(), entity.ServiceTripStart,
 	)
 	if err != nil {
+		contractResult = "error"
+		s.metrics.ContractRequestTotal.WithLabelValues(contractResult).Inc()
+		s.metrics.ContractRequestDuration.WithLabelValues(contractResult).
+			Observe(time.Since(contractStarted).Seconds())
 		logger.Error("failed to check contract service", slog.Any("error", err))
 		return nil, fmt.Errorf("%w: %s", tripErrors.ErrTripStartIsNotAllowed, err.Error())
 	}
 	if !tripStartAllowedResp.Allowed {
+		contractResult = "denied"
+		s.metrics.ContractRequestTotal.WithLabelValues(contractResult).Inc()
+		s.metrics.ContractRequestDuration.WithLabelValues(contractResult).
+			Observe(time.Since(contractStarted).Seconds())
 		return nil, fmt.Errorf("%w: %s", tripErrors.ErrTripStartIsNotAllowed, tripStartAllowedResp.Reason)
 	}
+	s.metrics.ContractRequestTotal.WithLabelValues(contractResult).Inc()
+	s.metrics.ContractRequestDuration.WithLabelValues(contractResult).
+		Observe(time.Since(contractStarted).Seconds())
 
 	started := time.Now()
 	result := "success"

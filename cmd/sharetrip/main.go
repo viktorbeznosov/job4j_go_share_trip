@@ -102,7 +102,7 @@ func main() {
 	}()
 
 	outboxRepo := outbox.NewEventRepository(pool, m)
-	outboxPublisher := events.NewPublisher(outboxRepo, tripProducer, logger)
+	outboxPublisher := events.NewPublisher(outboxRepo, tripProducer, logger, m)
 
 	go func() {
 		if err := outboxPublisher.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -114,6 +114,7 @@ func main() {
 
 	app := fiber.New()
 
+	app.Use(tracing.NewFiberMiddleware())
 	app.Use(middleware.Correlation(logger))
 	app.Use(middleware.NewHTTPMetricsMiddleware(m))
 

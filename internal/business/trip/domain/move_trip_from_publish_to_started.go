@@ -120,12 +120,25 @@ func (d *TripDomain) MoveFromPublishToStarted(
 		}
 
 		event := outbox.NewPendingEvent(outbox.EventTypeTripStarted, lockedTrip.ID, nil)
+		meta := events.MetadataFromContext(
+			ctx,
+			event.ID.String(),
+			events.EventTypeTripStarted,
+			event.CreatedAt,
+		)
+		metadataJSON, err := json.Marshal(meta)
+		if err != nil {
+			return nil, err
+		}
+		event.Metadata = metadataJSON
+
 		payload, err := json.Marshal(events.NewTripStarted(
 			event.ID,
 			lockedTrip.ID,
 			lockedTrip.DriverID,
 			req.CompanyID,
 			event.CreatedAt,
+			meta,
 		))
 		if err != nil {
 			return nil, err
@@ -139,6 +152,15 @@ func (d *TripDomain) MoveFromPublishToStarted(
 			d.metrics.TripCreateDuration.WithLabelValues(result).Observe(time.Since(started).Seconds())
 			return nil, fmt.Errorf("failed to save outbox event: %w", err)
 		}
+
+		logger.Info("outbox event created",
+			slog.String("operation", "OutboxInsert"),
+			slog.String("event_id", event.ID.String()),
+			slog.String("event_type", string(outbox.EventTypeTripStarted)),
+			slog.String("correlation_id", meta.CorrelationID),
+			slog.String("causation_id", meta.CausationID),
+			slog.String("result", "created"),
+		)
 
 		return &lockedTrip, nil
 	})

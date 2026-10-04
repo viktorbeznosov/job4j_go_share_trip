@@ -40,7 +40,10 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 
 	logger := logctx.Logger(ctx).With(
 		slog.String("handler", "MoveTripDraftToPublish"),
+		slog.String("operation", "PublishTrip"),
 	)
+
+	logger.Info("publish trip started", slog.String("result", "started"))
 
 	tracer := otel.Tracer("trip-api")
 	_, span := tracer.Start(ctx, "MoveTripDraftToPublish")
