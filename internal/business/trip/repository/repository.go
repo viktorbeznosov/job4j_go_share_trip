@@ -1,11 +1,11 @@
 package repository
 
 import (
-    "context"
+	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-    "github.com/jackc/pgx/v5"
 
 	"job4j_go_share_trip/internal/observability/metrics"
 )
@@ -33,5 +33,3 @@ func NewPostgresRepository(db *pgxpool.Pool, metrics *metrics.Metrics) *TripRepo
 func (r *TripRepository) GetDB() *pgxpool.Pool {
 	return r.db
 }
-
-

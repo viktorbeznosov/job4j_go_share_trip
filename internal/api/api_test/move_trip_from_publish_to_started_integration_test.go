@@ -15,6 +15,7 @@ import (
 
 	"job4j_go_share_trip/internal/api"
 	tripErrors "job4j_go_share_trip/internal/api/errors"
+	requestRepo "job4j_go_share_trip/internal/business/request/repository"
 	"job4j_go_share_trip/internal/business/trip/domain"
 	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/business/trip/repository"
@@ -29,7 +30,8 @@ func newTestTripService(contractClient service.ContractClient) *service.TripServ
 	m := getTestMetrics()
 	tripRepo := repository.NewPostgresRepository(testPool, m)
 	eventRepo := outbox.NewEventRepository(testPool, m)
-	tripDomain := domain.NewDomain(*tripRepo, *eventRepo, m)
+	reqRepo := requestRepo.NewPostgresRepository(testPool, m)
+	tripDomain := domain.NewDomain(*tripRepo, *reqRepo, *eventRepo, m)
 
 	return service.NewService(
 		*tripDomain,

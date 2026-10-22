@@ -77,7 +77,7 @@ func TestMain(m *testing.M) {
 	registry := prometheus.NewRegistry()
 	metrix := metrics.New(registry)
 
-    contractClient := NewMockContractClient(true)
+	contractClient := NewMockContractClient(true)
 
 	server := api.NewServer(testPool, registry, metrix, contractClient, nil)
 
@@ -129,6 +129,9 @@ func TestMain(m *testing.M) {
 					Roles: []string{"client"},
 				},
 			},
+			ShareTrip: middleware.ShareTripPermissions{
+				Permissions: shareTripPermissionsFromClaims(claimsMap),
+			},
 		}
 		c.Locals(middleware.KeycloakClaimsKey, claims)
 		return c.Next()
@@ -170,4 +173,29 @@ func waitReady(db *sql.DB) {
 	}
 
 	log.Fatalf("database is not ready after timeout")
+}
+
+func shareTripPermissionsFromClaims(claimsMap map[string]interface{}) []string {
+	permissions := []string{middleware.PermissionShareTripDriver}
+
+	sharetrip, ok := claimsMap["sharetrip"].(map[string]interface{})
+	if !ok {
+		return permissions
+	}
+
+	raw, ok := sharetrip["permissions"].([]interface{})
+	if !ok {
+		return permissions
+	}
+
+	parsed := make([]string, 0, len(raw))
+	for _, item := range raw {
+		value, ok := item.(string)
+		if !ok {
+			continue
+		}
+		parsed = append(parsed, value)
+	}
+
+	return parsed
 }

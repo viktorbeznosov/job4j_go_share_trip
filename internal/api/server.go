@@ -2,6 +2,9 @@
 package api
 
 import (
+	requestDomain "job4j_go_share_trip/internal/business/request/domain"
+	requestRepo "job4j_go_share_trip/internal/business/request/repository"
+	requestService "job4j_go_share_trip/internal/business/request/service"
 	"job4j_go_share_trip/internal/business/trip/domain"
 	"job4j_go_share_trip/internal/business/trip/repository"
 	trip_service "job4j_go_share_trip/internal/business/trip/service"
@@ -13,9 +16,10 @@ import (
 )
 
 type Server struct {
-	TripHandler *TripHandler
-	Registry    *prometheus.Registry
-	Metrics     *metrics.Metrics
+	TripHandler    *TripHandler
+	RequestHandler *RequestHandler
+	Registry       *prometheus.Registry
+	Metrics        *metrics.Metrics
 }
 
 func NewServer(
@@ -27,6 +31,7 @@ func NewServer(
 ) *Server {
 	tripDomain := domain.NewDomain(
 		*repository.NewPostgresRepository(pool, m),
+		*requestRepo.NewPostgresRepository(pool, m),
 		*outbox.NewEventRepository(pool, m),
 		m,
 	)
@@ -40,9 +45,17 @@ func NewServer(
 		m,
 	)
 
+	tripRepository := repository.NewPostgresRepository(pool, m)
+	reqDomain := requestDomain.NewDomain(
+		*requestRepo.NewPostgresRepository(pool, m),
+		*tripRepository,
+		*outbox.NewEventRepository(pool, m),
+	)
+
 	return &Server{
-		TripHandler: NewTripHandler(tripService),
-		Registry:    registry,
-		Metrics:     m,
+		TripHandler:    NewTripHandler(tripService),
+		RequestHandler: NewRequestHandler(requestService.NewService(*reqDomain)),
+		Registry:       registry,
+		Metrics:        m,
 	}
 }

@@ -19,7 +19,7 @@ import (
 )
 
 func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
-	t.Run("success - перевод из Draft в Published", func(t *testing.T) {
+	t.Run("success - перевод из Draft в Preapproved", func(t *testing.T) {
 		ctx := context.Background()
 
 		driverID := uuid.New()
@@ -79,7 +79,7 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 				FromPoint:     testData.Trip.FromPoint,
 				ToPoint:       testData.Trip.ToPoint,
 				Seats:         testData.Trip.Seats,
-				Status:        string(entity.StatusPublished),
+				Status:        string(entity.StatusPreapproved),
 				CreatedAt:     response.Data.CreatedAt,
 				DepartureTime: response.Data.DepartureTime,
 			},
@@ -90,7 +90,12 @@ func TestMoveTripFromDraftToPublished_Success(t *testing.T) {
 		tripRepo := repository.NewPostgresRepository(testPool, m)
 		updatedTrip, err := tripRepo.GetByTripID(ctx, testData.TripID)
 		require.NoError(t, err)
-		assert.Equal(t, entity.StatusPublished, updatedTrip.Status)
+		assert.Equal(t, entity.StatusPreapproved, updatedTrip.Status)
+
+		eventType, eventStatus, err := latestOutboxEvent(ctx, testPool, testData.TripID)
+		require.NoError(t, err)
+		assert.Equal(t, "trip_preapproved", eventType)
+		assert.Equal(t, "pending", eventStatus)
 	})
 }
 
@@ -208,8 +213,8 @@ func TestMoveTripFromDraftToPublished_TripNotFound(t *testing.T) {
 	})
 }
 
-func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
-	t.Run("success - поездка уже опубликована (204 No Content)", func(t *testing.T) {
+func TestMoveTripFromDraftToPublished_AlreadyPreapproved(t *testing.T) {
+	t.Run("success - поездка уже в preapproved (204 No Content)", func(t *testing.T) {
 		ctx := context.Background()
 
 		driverID := uuid.New()
@@ -217,7 +222,7 @@ func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
 			ctx,
 			testPool,
 			driverID,
-			entity.StatusPublished,
+			entity.StatusPreapproved,
 		)
 		require.NoError(t, err)
 
@@ -267,7 +272,7 @@ func TestMoveTripFromDraftToPublished_AlreadyPublished(t *testing.T) {
 		tripRepo := repository.NewPostgresRepository(testPool, m)
 		updatedTrip, err := tripRepo.GetByTripID(ctx, testData.TripID)
 		require.NoError(t, err)
-		assert.Equal(t, entity.StatusPublished, updatedTrip.Status)
+		assert.Equal(t, entity.StatusPreapproved, updatedTrip.Status)
 	})
 }
 

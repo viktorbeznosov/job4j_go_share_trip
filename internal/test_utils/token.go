@@ -9,11 +9,12 @@ import (
 
 // TestTokenOptions опции для генерации тестового токена
 type TestTokenOptions struct {
-	UserID   string
-	Username string
-	Email    string
-	Roles    []string // Роли пользователя
-	ClientID string   // ID клиента (по умолчанию "sharetrip-api")
+	UserID      string
+	Username    string
+	Email       string
+	Roles       []string
+	Permissions []string
+	ClientID    string
 }
 
 // GenerateTestToken создаёт тестовый JWT токен (без подписи) для тестов
@@ -36,6 +37,9 @@ func GenerateTestTokenWithOptions(opts TestTokenOptions) string {
 	if opts.Roles == nil {
 		opts.Roles = []string{"client"}
 	}
+	if opts.Permissions == nil {
+		opts.Permissions = []string{"sharetrip_driver"}
+	}
 
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
 
@@ -52,6 +56,9 @@ func GenerateTestTokenWithOptions(opts TestTokenOptions) string {
 		"realm_access": map[string]interface{}{
 			"roles": opts.Roles,
 		},
+		"sharetrip": map[string]interface{}{
+			"permissions": opts.Permissions,
+		},
 		"exp": time.Now().Add(time.Hour).Unix(),
 		"iat": time.Now().Unix(),
 	}
@@ -62,12 +69,32 @@ func GenerateTestTokenWithOptions(opts TestTokenOptions) string {
 	return fmt.Sprintf("%s.%s.", header, payload)
 }
 
-// GenerateAdminToken создаёт токен с правами администратора
 func GenerateAdminToken(userID, username, email string) string {
 	return GenerateTestTokenWithOptions(TestTokenOptions{
-		UserID:   userID,
-		Username: username,
-		Email:    email,
-		Roles:    []string{"client"},
+		UserID:      userID,
+		Username:    username,
+		Email:       email,
+		Roles:       []string{"client"},
+		Permissions: []string{"sharetrip_admin"},
+	})
+}
+
+func GeneratePassengerToken(userID, username, email string) string {
+	return GenerateTestTokenWithOptions(TestTokenOptions{
+		UserID:      userID,
+		Username:    username,
+		Email:       email,
+		Roles:       []string{"client"},
+		Permissions: []string{"sharetrip_passenger"},
+	})
+}
+
+func GenerateDirectorToken(userID, username, email string) string {
+	return GenerateTestTokenWithOptions(TestTokenOptions{
+		UserID:      userID,
+		Username:    username,
+		Email:       email,
+		Roles:       []string{"client"},
+		Permissions: []string{"sharetrip_director"},
 	})
 }

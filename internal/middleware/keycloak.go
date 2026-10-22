@@ -19,6 +19,11 @@ import (
 const (
 	RefreshTokenHeader = "X-Refresh-Token"
 	KeycloakClaimsKey  = "keycloak_claims"
+
+	PermissionShareTripAdmin     = "sharetrip_admin"
+	PermissionShareTripDriver    = "sharetrip_driver"
+	PermissionShareTripDirector  = "sharetrip_director"
+	PermissionShareTripPassenger = "sharetrip_passenger"
 )
 
 type KeycloakConfig struct {
@@ -26,6 +31,10 @@ type KeycloakConfig struct {
 	ClientID     string
 	ClientSecret string
 	HTTPClient   *http.Client
+}
+
+type ShareTripPermissions struct {
+	Permissions []string `json:"permissions"`
 }
 
 type KeycloakClaims struct {
@@ -36,6 +45,7 @@ type KeycloakClaims struct {
 	ResourceAccess    map[string]struct {
 		Roles []string `json:"roles"`
 	} `json:"resource_access"`
+	ShareTrip ShareTripPermissions `json:"sharetrip"`
 }
 
 type keycloakTokenResponse struct {
@@ -85,8 +95,8 @@ func refreshAccessToken(
 	}
 
 	defer func() {
-        _ = resp.Body.Close()
-    }()
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -144,6 +154,29 @@ func (c KeycloakClaims) HasClientRole(clientID string, role string) bool {
 	return false
 }
 
+func (c KeycloakClaims) HasUserPermission(permission string) bool {
+	for _, current := range c.ShareTrip.Permissions {
+		if current == PermissionShareTripAdmin {
+			return true
+		}
+		if current == permission {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c KeycloakClaims) HasExactPermission(permission string) bool {
+	for _, current := range c.ShareTrip.Permissions {
+		if current == permission {
+			return true
+		}
+	}
+
+	return false
+}
+
 func RequireClientRole(clientID string, role string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		claims, err := ClaimsFromContext(c)
@@ -157,6 +190,38 @@ func RequireClientRole(clientID string, role string) fiber.Handler {
 		}
 
 		return c.Next()
+	}
+}
+
+func RequireUserPermission(permission string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		claims, err := ClaimsFromContext(c)
+		if err != nil {
+			return err
+		}
+
+		if !claims.HasUserPermission(permission) {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
+		}
+
+		return c.Next()
+	}
+}
+
+func RequireAnyUserPermission(permissions ...string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		claims, err := ClaimsFromContext(c)
+		if err != nil {
+			return err
+		}
+
+		for _, permission := range permissions {
+			if claims.HasUserPermission(permission) {
+				return c.Next()
+			}
+		}
+
+		return fiber.NewError(fiber.StatusForbidden, "access denied")
 	}
 }
 
@@ -200,5 +265,3 @@ func ClaimsFromContext(c *fiber.Ctx) (*KeycloakClaims, error) {
 
 	return claims, nil
 }
-
-

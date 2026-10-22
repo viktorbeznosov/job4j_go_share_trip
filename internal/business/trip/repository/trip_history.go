@@ -13,7 +13,6 @@ import (
 	"job4j_go_share_trip/internal/observability/logctx"
 )
 
-
 func (r *TripRepository) CreateHistoryTx(
 	ctx context.Context,
 	db Querier,

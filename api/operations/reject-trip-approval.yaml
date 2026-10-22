@@ -1,0 +1,214 @@
+openapi: 3.1.0
+info:
+  title: Reject trip approval
+  version: "1"
+  description: |
+    Директор отклоняет заявку на согласование поездки.
+    Сервис: approval. Операция идемпотентна по Idempotency-Key
+    в области (operation, director_id, approval_id).
+servers:
+  - url: https://approval.internal
+    description: approval
+paths:
+  /api/approvals/{approvalId}/reject:
+    post:
+      operationId: rejectTripApproval
+      tags: [approval]
+      summary: Отклонить заявку на согласование поездки
+      security:
+        - keycloakRefreshToken: []
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/Traceparent"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectApprovalRequest"
+            example:
+              companyId: "11111111-1111-1111-1111-111111111111"
+              reason: "Маршрут не согласован со службой безопасности"
+      responses:
+        "200":
+          description: Повтор с тем же ключом и тем же телом. Сохранённый ответ первой попытки.
+          headers:
+            X-Idempotent-Replayed:
+              schema: { type: boolean, enum: [true] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RejectApprovalResponse"
+        "201":
+          description: Решение reject зафиксировано. Возврат поездки в draft произойдёт асинхронно.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RejectApprovalResponse"
+              example:
+                status: Success
+                data:
+                  approvalId: "33333333-3333-3333-3333-333333333333"
+                  tripId: "22222222-2222-2222-2222-222222222222"
+                  decision: rejected
+                  reason: "Маршрут не согласован со службой безопасности"
+                  decidedBy: "44444444-4444-4444-4444-444444444444"
+                  decidedAt: "2026-10-22T17:06:00Z"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Нет permission sharetrip_director.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: Error
+                code: FORBIDDEN
+                message: Director permission required
+        "404":
+          description: Заявка не найдена.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: Error
+                code: APPROVAL_NOT_FOUND
+                message: approval not found
+        "409":
+          description: |
+            Заявка уже решена, либо тот же Idempotency-Key использован с другим телом.
+            При гонке approve и reject побеждает первая зафиксированная транзакция.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                alreadyApproved:
+                  value:
+                    status: Error
+                    code: APPROVAL_ALREADY_APPROVED
+                    message: Approval is already approved
+                alreadyRejected:
+                  value:
+                    status: Error
+                    code: APPROVAL_ALREADY_REJECTED
+                    message: Approval is already rejected
+                idempotencyConflict:
+                  value:
+                    status: Error
+                    code: IDEMPOTENCY_KEY_REUSED
+                    message: Idempotency-Key was already used with a different request body
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    keycloakRefreshToken:
+      type: apiKey
+      in: header
+      name: X-Refresh-Token
+  parameters:
+    ApprovalId:
+      name: approvalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        UUID, который генерирует клиент директора на попытку решения.
+        Область уникальности: approval + reject + director_id + approval_id.
+      schema:
+        type: string
+        format: uuid
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema: { type: string }
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: { type: string }
+    Traceparent:
+      name: traceparent
+      in: header
+      required: false
+      schema: { type: string }
+  schemas:
+    RejectApprovalRequest:
+      type: object
+      required: [companyId, reason]
+      additionalProperties: false
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    RejectApprovalResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          enum: [Success]
+        data:
+          type: object
+          required: [approvalId, tripId, decision, reason, decidedBy, decidedAt]
+          properties:
+            approvalId: { type: string, format: uuid }
+            tripId: { type: string, format: uuid }
+            decision:
+              type: string
+              enum: [rejected]
+            reason: { type: string }
+            decidedBy: { type: string, format: uuid }
+            decidedAt:
+              type: string
+              format: date-time
+    ErrorResponse:
+      type: object
+      required: [status, code, message]
+      properties:
+        status: { type: string, enum: [Error] }
+        code: { type: string }
+        message: { type: string }
+        correlation_id: { type: string }
+        details: { type: object, additionalProperties: true }
+  responses:
+    ValidationError:
+      description: Невалидное тело, пустой reason или отсутствует Idempotency-Key.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            status: Error
+            code: VALIDATION_ERROR
+            message: reason is required
+    Unauthorized:
+      description: Нет или невалиден refresh token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Внутренняя ошибка. Если транзакция не закоммичена, клиент может повторить с тем же ключом.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	tripErrors "job4j_go_share_trip/internal/api/errors"
-	"job4j_go_share_trip/internal/business/trip/service"
+	"job4j_go_share_trip/internal/middleware"
 )
 
 func (h *TripHandler) GetTripByUUID(c *fiber.Ctx) error {
@@ -27,11 +27,17 @@ func (h *TripHandler) GetTripByUUID(c *fiber.Ctx) error {
 		return h.errorMapper.MapParseError(c, err, "Invalid UUID format")
 	}
 
-	serviceRequest := service.GetTripRequest{
-		TripID: id,
+	claims, err := middleware.ClaimsFromContext(c)
+	if err != nil {
+		return h.errorMapper.MapParseError(c, err, "Error get claims")
 	}
 
-	tripResponse, err := h.TripService.GetByTripID(c.Context(), serviceRequest)
+	viewer, err := viewerFromClaims(claims)
+	if err != nil {
+		return h.errorMapper.MapParseError(c, err, "Error get client id")
+	}
+
+	tripResponse, err := h.TripService.GetByTripIDForViewer(c.UserContext(), id, viewer)
 	if err != nil {
 		if errors.Is(err, tripErrors.ErrTripNotFound) {
 			return h.errorMapper.MapNotFound(c, err)
@@ -46,6 +52,15 @@ func (h *TripHandler) GetTripByUUID(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusOK).JSON(Response{
 		Status: "Success",
-		Data:   tripResponse,
+		Data: CreateTripResponse{
+			ID:            tripResponse.ID.String(),
+			DriverID:      tripResponse.DriverID.String(),
+			FromPoint:     tripResponse.FromPoint,
+			ToPoint:       tripResponse.ToPoint,
+			DepartureTime: tripResponse.DepartureTime,
+			Seats:         tripResponse.Seats,
+			Status:        tripResponse.Status,
+			CreatedAt:     tripResponse.CreatedAt,
+		},
 	})
 }

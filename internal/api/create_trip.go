@@ -15,10 +15,11 @@ import (
 )
 
 type CreateTripRequest struct {
-	FromPoint     string `json:"fromPoint"`
-	ToPoint       string `json:"toPoint"`
-	DepartureTime string `json:"departureTime"`
-	Seats         int    `json:"seats"`
+	FromPoint     string    `json:"fromPoint"`
+	ToPoint       string    `json:"toPoint"`
+	DepartureTime string    `json:"departureTime"`
+	Seats         int       `json:"seats"`
+	CompanyID     uuid.UUID `json:"companyId"`
 }
 
 type CreateTripResponse struct {
@@ -71,6 +72,7 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 
 	serviceReq := service.CreateTripRequest{
 		DriverID:      driverUUID,
+		CompanyID:     req.CompanyID,
 		FromPoint:     req.FromPoint,
 		ToPoint:       req.ToPoint,
 		DepartureTime: departureTime,
@@ -103,6 +105,10 @@ func (h *TripHandler) CreateTrip(c *fiber.Ctx) error {
 }
 
 func (r *CreateTripRequest) Validate() error {
+	if r.CompanyID == uuid.Nil {
+		return tripErrors.ErrCompanyIDRequired
+	}
+
 	if r.FromPoint == "" {
 		return tripErrors.ErrFromPointRequired
 	}

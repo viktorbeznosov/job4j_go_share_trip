@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	tripErrors "job4j_go_share_trip/internal/api/errors"
+	requestEntity "job4j_go_share_trip/internal/business/request/entity"
 	"job4j_go_share_trip/internal/business/trip/entity"
 	"job4j_go_share_trip/internal/events"
 	"job4j_go_share_trip/internal/observability/logctx"
@@ -161,6 +162,34 @@ func (d *TripDomain) MoveFromPublishToStarted(
 			slog.String("causation_id", meta.CausationID),
 			slog.String("result", "created"),
 		)
+
+		attached, err := d.listAttachedRequestsTx(ctx, tx, lockedTrip.ID)
+		if err != nil {
+			logger.Error("failed to list attached requests", slog.Any("error", err))
+			return nil, err
+		}
+
+		if err := d.moveAttachedRequestsTx(
+			ctx,
+			tx,
+			attached,
+			requestEntity.StatusAgreed,
+			requestEntity.StatusStarted,
+			outbox.EventTypeRequestStarted,
+			events.EventTypeRequestStarted,
+		); err != nil {
+			logger.Error("failed to start attached requests", slog.Any("error", err))
+			return nil, err
+		}
+
+		if _, _, err := d.detachRequestsToPublishedTx(
+			ctx,
+			tx,
+			filterByStatus(attached, requestEntity.StatusPreAgreed),
+		); err != nil {
+			logger.Error("failed to detach pre_agreed requests", slog.Any("error", err))
+			return nil, err
+		}
 
 		return &lockedTrip, nil
 	})

@@ -14,8 +14,11 @@ import (
 	"job4j_go_share_trip/config"
 	"job4j_go_share_trip/internal/api"
 	"job4j_go_share_trip/internal/app"
+	requestRepo "job4j_go_share_trip/internal/business/request/repository"
+	"job4j_go_share_trip/internal/business/trip/repository"
 	"job4j_go_share_trip/internal/clients/contract"
 	"job4j_go_share_trip/internal/events"
+	"job4j_go_share_trip/internal/jobs"
 	"job4j_go_share_trip/internal/middleware"
 	"job4j_go_share_trip/internal/observability/metrics"
 	"job4j_go_share_trip/internal/observability/tracing"
@@ -107,6 +110,22 @@ func main() {
 	go func() {
 		if err := outboxPublisher.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("outbox publisher stopped", "error", err)
+		}
+	}()
+
+	tripRepo := repository.NewPostgresRepository(pool, m)
+	reqRepo := requestRepo.NewPostgresRepository(pool, m)
+	publishNotifier := jobs.NewTripPublishNotifier(tripRepo, reqRepo, outboxRepo)
+	requestExpiry := jobs.NewRequestExpiry(reqRepo, outboxRepo)
+
+	go func() {
+		if err := jobs.Run(ctx, time.Minute, publishNotifier.Tick); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("trip publish notifier stopped", "error", err)
+		}
+	}()
+	go func() {
+		if err := jobs.Run(ctx, time.Minute, requestExpiry.Tick); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("request expiry worker stopped", "error", err)
 		}
 	}()
 

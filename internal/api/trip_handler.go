@@ -5,8 +5,8 @@ import (
 )
 
 type TripHandler struct {
-	TripService  *service.TripService
-	errorMapper  *ErrorMapper
+	TripService *service.TripService
+	errorMapper *ErrorMapper
 }
 
 func NewTripHandler(tripService *service.TripService) *TripHandler {

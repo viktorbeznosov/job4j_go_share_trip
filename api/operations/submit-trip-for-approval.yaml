@@ -1,0 +1,247 @@
+openapi: 3.1.0
+info:
+  title: Submit trip for approval
+  version: "1"
+  description: |
+    Водитель отправляет черновик поездки на согласование директору.
+    Сервис: sharetrip. Операция идемпотентна по заголовку Idempotency-Key
+    в области (operation, driver_id, trip_id).
+servers:
+  - url: https://sharetrip.internal
+    description: sharetrip
+paths:
+  /api/trips/{tripId}/submit-for-approval:
+    post:
+      operationId: submitTripForApproval
+      tags: [sharetrip, approval-process]
+      summary: Отправить черновик поездки на согласование
+      security:
+        - keycloakRefreshToken: []
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/Traceparent"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitTripForApprovalRequest"
+            example:
+              companyId: "11111111-1111-1111-1111-111111111111"
+              comment: "Маршрут согласован с отделом логистики"
+      responses:
+        "200":
+          description: |
+            Повтор с тем же Idempotency-Key и тем же телом.
+            Возвращается сохранённый ответ первой успешной попытки.
+            Тело совпадает с 201.
+          headers:
+            X-Idempotent-Replayed:
+              schema: { type: boolean, enum: [true] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitTripForApprovalResponse"
+        "201":
+          description: Заявка на согласование создана, поездка переведена в preapproved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitTripForApprovalResponse"
+              example:
+                status: Success
+                data:
+                  tripId: "22222222-2222-2222-2222-222222222222"
+                  approvalId: "33333333-3333-3333-3333-333333333333"
+                  tripStatus: preapproved
+                  approvalStatus: pending
+                  submittedAt: "2026-10-22T17:00:00Z"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Клиент не водитель этой поездки или нет permission sharetrip_driver.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notOwner:
+                  value:
+                    status: Error
+                    code: DRIVER_NOT_OWNER
+                    message: Client is not driver of this trip
+                publishForbidden:
+                  value:
+                    status: Error
+                    code: TRIP_PUBLISH_NOT_ALLOWED
+                    message: Publish trips is not allowed for this company
+        "404":
+          description: Поездка не найдена.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: Error
+                code: TRIP_NOT_FOUND
+                message: trip not found
+        "409":
+          description: Бизнес-конфликт.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notDraft:
+                  value:
+                    status: Error
+                    code: TRIP_NOT_DRAFT
+                    message: Trip is not in draft status
+                alreadyPending:
+                  value:
+                    status: Error
+                    code: APPROVAL_ALREADY_PENDING
+                    message: Active approval already exists for this trip
+                    details:
+                      approvalId: "33333333-3333-3333-3333-333333333333"
+                idempotencyConflict:
+                  value:
+                    status: Error
+                    code: IDEMPOTENCY_KEY_REUSED
+                    message: Idempotency-Key was already used with a different request body
+        "422":
+          description: Contract ответил available=false.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: Error
+                code: CONTRACT_SERVICE_DENIED
+                message: trip_publish is not enabled for the company
+        "503":
+          description: Contract недоступен после исчерпания retry. Поездка не изменена.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: Error
+                code: CONTRACT_UNAVAILABLE
+                message: Contract service is unavailable
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    keycloakRefreshToken:
+      type: apiKey
+      in: header
+      name: X-Refresh-Token
+  parameters:
+    TripId:
+      name: tripId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        UUID, который генерирует клиент на попытку отправки.
+        Область уникальности: sharetrip + submit-for-approval + driver_id + trip_id.
+      schema:
+        type: string
+        format: uuid
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema: { type: string }
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: { type: string }
+    Traceparent:
+      name: traceparent
+      in: header
+      required: false
+      schema: { type: string }
+  schemas:
+    SubmitTripForApprovalRequest:
+      type: object
+      required: [companyId]
+      additionalProperties: false
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        comment:
+          type: string
+          maxLength: 500
+    SubmitTripForApprovalResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          enum: [Success]
+        data:
+          type: object
+          required: [tripId, approvalId, tripStatus, approvalStatus, submittedAt]
+          properties:
+            tripId: { type: string, format: uuid }
+            approvalId: { type: string, format: uuid }
+            tripStatus:
+              type: string
+              enum: [preapproved]
+            approvalStatus:
+              type: string
+              enum: [pending]
+            submittedAt:
+              type: string
+              format: date-time
+    ErrorResponse:
+      type: object
+      required: [status, code, message]
+      properties:
+        status: { type: string, enum: [Error] }
+        code: { type: string }
+        message: { type: string }
+        correlation_id: { type: string }
+        details: { type: object, additionalProperties: true }
+  responses:
+    ValidationError:
+      description: Невалидное тело или отсутствует Idempotency-Key.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            status: Error
+            code: VALIDATION_ERROR
+            message: company id is required
+    Unauthorized:
+      description: Нет или невалиден refresh token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Непредвиденная ошибка после исчерпания внутренних retry.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            status: Error
+            code: INTERNAL_ERROR
+            message: Internal server error

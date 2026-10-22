@@ -13,6 +13,7 @@ import (
 
 type CreateTripRequest struct {
 	DriverID      uuid.UUID
+	CompanyID     uuid.UUID
 	FromPoint     string
 	ToPoint       string
 	DepartureTime time.Time
@@ -44,6 +45,7 @@ func (s *TripService) Create(ctx context.Context, req CreateTripRequest) (*Creat
 
 	domainReq := domain.CreateTripRequest{
 		DriverID:      req.DriverID,
+		CompanyID:     req.CompanyID,
 		FromPoint:     req.FromPoint,
 		ToPoint:       req.ToPoint,
 		DepartureTime: req.DepartureTime,

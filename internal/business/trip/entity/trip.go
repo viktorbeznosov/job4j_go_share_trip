@@ -12,17 +12,18 @@ type Status string
 type ServiceType string
 
 const (
-	StatusDraft     Status = "draft"
-	StatusPublished Status = "published"
-	StatusStarted   Status = "started"
-	StatusCanceled  Status = "canceled"
-	StatusConfirmed Status = "completed"
+	StatusDraft       Status = "draft"
+	StatusPreapproved Status = "preapproved"
+	StatusPublished   Status = "published"
+	StatusStarted     Status = "started"
+	StatusCanceled    Status = "canceled"
+	StatusConfirmed   Status = "completed"
 )
 
 const (
-	ServiceTripCreation     ServiceType = "trip_creation"
-	ServiceTripPublish      ServiceType = "trip_publish"
-	ServiceTripStart        ServiceType = "trip_start"
+	ServiceTripCreation ServiceType = "trip_creation"
+	ServiceTripPublish  ServiceType = "trip_publish"
+	ServiceTripStart    ServiceType = "trip_start"
 )
 
 type Trip struct {
@@ -70,4 +71,3 @@ func NewTrip(
 		CreatedAt:     time.Now(),
 	}, nil
 }
-

@@ -1,586 +1,369 @@
 # ShareTrip
 
-ShareTrip — учебный проект по моделированию домена сервиса совместных поездок. Проект описывает ключевые сущности, бизнес-процессы, состояния, правила и доменные события системы без привязки к конкретной технологии реализации.
+Сервис совместных поездок. Водитель создаёт поездку, директор её апрувит, пассажир подаёт заявку, стороны подтверждают участие, поездка стартует и завершается.
 
-## Назначение проекта
+Документ описывает **фактическую** логику текущей реализации и последние изменения по сервисам:
 
-Система ShareTrip предназначена для организации совместных поездок между водителями и пассажирами.
-Она помогает:
+- `job4j_go_share_trip` — API поездок и заявок;
+- `job4j_go_share_trip_contracts` — договоры компании и водителя;
+- `job4j_go_share_trip_notification` — уведомления;
+- `job4j_go_share_trip_front` — Angular UI.
 
-- создавать поездки;
-- публиковать их для поиска;
-- принимать заявки пассажиров;
-- бронировать места в машине;
-- подтверждать участие сторон;
-- отменять бронирования и поездки;
-- завершать поездки.
+## Сервисы и границы
 
-## Структрура проекта
+| Сервис | Владеет | Не владеет |
+|---|---|---|
+| **ShareTrip** | агрегаты `Trip` и `Request`, outbox, воркеры | договором, доставкой уведомлений |
+| **Contracts** | договоры компании/водителя, флаги услуг | поездками и заявками |
+| **Notification** | таблица `notifications`, inbox `processed_events` | статусами поездок и контрактов |
+| **Frontend** | экраны ролей, вызовы API | бизнес-правилами |
+
+У каждого сервиса своя PostgreSQL. Связь между ними:
+
+- ShareTrip → Contracts: синхронный HTTP `CheckService` перед публикацией и стартом поездки;
+- ShareTrip → Kafka `trip.events`: асинхронные доменные события через outbox;
+- Contracts и Notification читают `trip.events` независимо.
+
+```text
+Клиент (Keycloak JWT)
+        │
+        ▼
+   ShareTrip API
+        │  HTTP CheckService
+        ├──────────────────► Contracts
+        │
+        │  INSERT outbox_events  (одна транзакция с агрегатом)
+        ▼
+ Outbox Publisher  ──►  Kafka topic trip.events
+                              │
+                ┌─────────────┴─────────────┐
+                ▼                           ▼
+           Contracts                    Notification
+     (draft / active / terminated)   (уведомления по event_id)
+```
+
+## Роли и доступ
+
+Авторизация: заголовок `X-Refresh-Token` → Keycloak refresh → access token. Права читаются из claim `sharetrip.permissions`.
+
+| Permission | Кто | Что может |
+|---|---|---|
+| `sharetrip_driver` | водитель | создавать/публиковать/стартовать/завершать/отменять свои поездки; подтверждать и отклонять заявки на свою поездку |
+| `sharetrip_passenger` | пассажир | создавать/публиковать заявки, прикреплять к поездке, отклонять свою заявку |
+| `sharetrip_director` | директор | апрувить поездки в `preapproved`; в списках видит **только** `preapproved` |
+| `sharetrip_admin` | админ | полный список поездок и заявок, фильтр `driverId` / `passengerId` |
+
+Роль клиента Keycloak для API: `client`.
+
+### Видимость поездок
+
+- **Водитель** — свои поездки.
+- **Пассажир** — опубликованные поездки **или** поездки, к которым прикреплена его заявка.
+- **Директор** — только `preapproved`.
+- **Админ** — все.
+
+### Видимость заявок
+
+- **Пассажир** — свои заявки.
+- **Водитель** — заявки на свои поездки в статусах `pre_agreed`, `agreed`, `started`, `canceled`, `completed`.
+- **Админ** — все. Фильтр `passengerId` только для админа.
+
+## Поездка (Trip)
+
+Статусы в БД:
+
+`draft` → `preapproved` → `published` → `started` → `completed`  
+параллельно: `canceled` (кроме `started` и уже завершённых).
+
+```text
+[*] --> draft
+draft --> preapproved     : водитель PUT /trip/move_to_publish
+draft --> canceled        : водитель PUT /trip/move_to_canceled
+preapproved --> published : директор PUT /trip/approve
+preapproved --> canceled
+published --> started     : водитель PUT /trip/move_to_started
+published --> canceled
+started --> completed     : водитель PUT /trip/move_to_completed
+started -x canceled       : запрещено, HTTP 409
+completed --> [*]
+canceled --> [*]
+```
+
+### Создание
+
+`POST /api/trip/` (водитель).
+
+Тело: `fromPoint`, `toPoint`, `departureTime` (`2006-01-02 15:04`, не в прошлом), `seats` (1–10), **`companyId`**.
+
+Результат: поездка `draft`. В той же транзакции в outbox пишется **`trip_created`** (`trip_id`, `driver_id`, `company_id`). Publisher отправляет его в Kafka.
+
+### Публикация водителем
+
+`PUT /api/trip/move_to_publish`.
+
+1. Синхронно Contracts: услуга `trip_publish` доступна компании.
+2. Только владелец, статус `draft`.
+3. Статус → `preapproved`.
+4. Outbox: `trip_preapproved`.
+
+Это **не** публикация для пассажиров. Пассажиры видят поездку после апрува директора.
+
+### Апрув директором
+
+`PUT /api/trip/approve`.
+
+1. Статус должен быть `preapproved`.
+2. Статус → `published`.
+3. Outbox: `trip_published` (`driver_id`, `company_id`).
+
+Именно это событие активирует контракт водителя.
+
+### Старт
+
+`PUT /api/trip/move_to_started`.
+
+1. Contracts: услуга `trip_start`.
+2. Только владелец, статус `published` (повторный вызов, если уже `started` — 204).
+3. Поездка → `started`, событие `trip_started`.
+4. Прикреплённые заявки:
+   - `agreed` → `started` + `request_started`;
+   - `pre_agreed` отцепляются обратно в `published` (`trip_id = null`).
+
+Отдельного `PUT /request/move_to_started` нет: заявки стартуют вместе с поездкой.
+
+### Завершение
+
+`PUT /api/trip/move_to_completed`.
+
+Только владелец, статус `started`. Поездка → `completed`. Заявки `started` → `completed` + `request_completed`. Событие `trip_completed`.
+
+### Отмена
+
+`PUT /api/trip/move_to_canceled`.
+
+Только владелец. **Стартовавшую поездку отменить нельзя** (`409`, `Started trip cannot be canceled`).
+
+Если отмена разрешена:
+
+- поездка → `canceled`, событие `trip_canceled` с `passenger_ids` и `request_ids`;
+- прикреплённые заявки отцепляются в `published` (`trip_id = null`).
+
+## Заявка (Request)
+
+Статусы:
+
+`draft` → `published` → `pre_agreed` → `agreed` → `started` → `completed`  
+отклонение: `pre_agreed` → `published`  
+истечение: `draft|published|pre_agreed|agreed` → `canceled`
+
+```text
+[*] --> draft
+draft --> published          : пассажир PUT /request/move_to_publish
+published --> pre_agreed     : пассажир PUT /request/move_request_to_agreed
+pre_agreed --> agreed        : водитель PUT /request/confirm confirm=true
+pre_agreed --> published     : водитель или пассажир confirm=false
+agreed --> started           : вместе со стартом поездки
+started --> completed        : вместе с завершением поездки
+(draft|published|pre_agreed|agreed) --> canceled : воркер expiry
+```
+
+Заявка живёт отдельно от поездки: маршрут и дата свои. К поездке она привязывается только в `pre_agreed` / `agreed` / `started`.
+
+### Создание и публикация
+
+`POST /api/request/` — пассажир, статус `draft`, событие `request_created`.  
+`PUT /api/request/move_to_publish` — владелец заявки, `draft` → `published`, событие `request_published`.
+
+### Запрос на поездку (preconfirm)
+
+`PUT /api/request/move_request_to_agreed` (`requestId`, `tripId`).
+
+- поездка должна быть `published`;
+- заявка — `published` или уже `pre_agreed` (можно переприкрепить к другой поездке);
+- сумма мест `pre_agreed` + `agreed` на поездке не превышает `seats`;
+- заявка → `pre_agreed`, `trip_id` заполнен.
+
+Событие **`request_preconfirmed`**: `passenger_id`, **`driver_id`**, `trip_id`.  
+Notification шлёт уведомление **водителю**.
+
+### Подтверждение / отклонение
+
+`PUT /api/request/confirm` (`requestId`, `confirm`).
+
+- `confirm=true` — только водитель поездки, заявка `pre_agreed` → `agreed`. Событие **`request_confirmed`** с `passenger_id`. Notification → **пассажиру**.
+- `confirm=false` — водитель поездки или пассажир-владелец заявки. Заявка → `published`, `trip_id = null`. Событие **`request_rejected`** с `passenger_id`. Notification → **пассажиру**.
+
+## Kafka: outbox → trip.events
+
+ShareTrip никогда не пишет в Kafka внутри HTTP-запроса. В одной транзакции с агрегатом:
+
+1. меняется статус;
+2. пишется history;
+3. `INSERT INTO outbox_events`.
+
+Publisher раз в секунду: `FOR UPDATE SKIP LOCKED` → Kafka → `sent`. При ошибке Kafka событие остаётся `pending` / `failed` и уйдёт позже.
+
+Topic: `trip.events` (env `KAFKA_TRIP_EVENTS_TOPIC`). Ключ: `trip_id` или `request_id`.
+
+### События поездки
+
+| event_type | Когда | Главные поля | Contracts | Notification |
+|---|---|---|---|---|
+| `trip_created` | создание поездки | `driver_id`, `company_id` | создать контракт **draft** | не слушает |
+| `trip_preapproved` | водитель отправил на апрув | `driver_id`, `company_id` | игнорирует | уведомление водителю |
+| `trip_published` | директор апрувил | `driver_id`, `company_id` | контракт → **active** | уведомление водителю |
+| `trip_started` | старт | `driver_id` | — | уведомление водителю |
+| `trip_canceled` | отмена | `passenger_ids`, `request_ids` | контракт → **terminated** | уведомления пассажирам |
+| `trip_completed` | завершение | `driver_id` | контракт → **terminated** | — |
+| `trip_publish_notificated` | воркер матчинга | `passenger_ids`, маршрут | — | уведомления пассажирам |
+
+### События заявки
+
+| event_type | Когда | Главные поля | Notification |
+|---|---|---|---|
+| `request_created` / `request_published` | создание / публикация | `passenger_id` | не слушает |
+| `request_preconfirmed` | пассажир запросил поездку | `driver_id`, `passenger_id`, `trip_id` | **водителю** |
+| `request_confirmed` | водитель принял | `passenger_id` | **пассажиру** |
+| `request_rejected` | отклонение | `passenger_id` | **пассажиру** |
+| `request_started` | вместе со стартом поездки | `passenger_id` | не слушает |
+| `request_completed` | вместе с завершением поездки | `passenger_id` | пассажиру |
+| `request_expired` | воркер expiry | `passenger_id` | пассажиру |
+
+Consumers используют inbox `processed_events` по `event_id`: повтор Kafka не создаёт второй контракт и второе уведомление.
+
+## Contracts
+
+Синхронный HTTP (ShareTrip спрашивает перед командой):
+
+```text
+GET /api/companies/{companyId}/services/{service}/availability
+```
+
+Услуги: `trip_publish`, `trip_start`. Если `available=false` или сервис недоступен — поездка не меняется (`403`).
+
+Асинхронно по Kafka:
+
+1. **`trip_created`** — если у водителя нет open-контракта (`draft` / `active` / `suspended`), создаётся **draft** (`start_date` пустой). Второй open не создаётся.
+2. **`trip_published`** (апрув директора) — open draft активируется, ставится `start_date`. Если open нет — создаётся сразу `active`.
+3. **`trip_preapproved` не трогает контракт.**
+4. **`trip_completed` / `trip_canceled`** — open-контракт → `terminated`, пишется `end_date`.
+
+Цепочка для водителя:
+
+```text
+создал поездку  →  контракт draft
+директор апрувил →  контракт active
+завершил/отменил →  контракт terminated
+```
+
+## Notification
+
+Читает `trip.events`, пишет строку в `notifications` (`recipient_id`, `type`, `payload`).
+
+| Событие | Кому |
+|---|---|
+| `trip_preapproved`, `trip_published`, `trip_started` | водитель |
+| `trip_canceled`, `trip_publish_notificated` | пассажиры из `passenger_ids` |
+| `request_preconfirmed` | водитель (`driver_id`) |
+| `request_confirmed`, `request_rejected`, `request_completed`, `request_expired` | пассажир (`passenger_id`) |
+
+`trip_created` notification не обрабатывает.
+
+## Фоновые воркеры (ShareTrip)
+
+Интервал: 1 минута.
+
+### TripPublishNotifier
+
+Для каждой `published` поездки, у которой ещё есть свободные места, ищет `published` заявки с тем же маршрутом и датой выезда, ещё не уведомлённые по этой поездке (`trip_publish_notified`). Пишет `trip_publish_notificated` с `passenger_ids`.
+
+### RequestExpiry
+
+Заявки `draft` / `published` / `pre_agreed` / `agreed`, у которых дата выезда уже в прошлом (UTC-день), переводятся в `canceled`, `trip_id` сбрасывается, событие `request_expired`.
+
+## HTTP API
+
+Префикс `/api`. Ответ: `{ "status": "Success"|"Error", "data": ..., "message": ... }`.
+
+### Поездки
+
+| Метод | Путь | Кто | Действие |
+|---|---|---|---|
+| POST | `/trip/` | водитель | создать `draft` |
+| PUT | `/trip/move_to_publish` | водитель | `draft` → `preapproved` |
+| PUT | `/trip/approve` | директор | `preapproved` → `published` |
+| PUT | `/trip/move_to_started` | водитель | `published` → `started` |
+| PUT | `/trip/move_to_completed` | водитель | `started` → `completed` |
+| PUT | `/trip/move_to_canceled` | водитель | отмена, кроме `started` |
+| GET | `/trip/` | driver/passenger/director/admin | список с видимостью роли |
+| GET | `/trip/:uuid` | то же | карточка с видимостью роли |
+
+Мутации кроме create принимают `tripId` и `companyId`. Create — `companyId` в теле вместе с маршрутом.
+
+### Заявки
+
+| Метод | Путь | Кто | Действие |
+|---|---|---|---|
+| POST | `/request/` | пассажир | создать `draft` |
+| PUT | `/request/move_to_publish` | пассажир | `draft` → `published` |
+| PUT | `/request/move_request_to_agreed` | пассажир | прикрепить к поездке |
+| PUT | `/request/confirm` | водитель / пассажир | принять или отклонить |
+| GET | `/request/` | passenger/driver/admin | список с видимостью роли |
+| GET | `/request/:uuid` | то же | карточка |
+
+Служебные: `GET /api/ready`, `GET /api/metrics`.
+
+## Надёжная доставка событий
+
+Пишущий шаг (смена статуса + событие) — локальная транзакция PostgreSQL. Kafka вне транзакции, поэтому:
+
+- **Outbox** на стороне ShareTrip: не потерять событие, если Kafka недоступна в момент HTTP.
+- **Inbox** на стороне Contracts и Notification: одно и то же `event_id` применяется один раз.
+
+Retry HTTP-команды не заменяет outbox: если поездка уже `published`, повтор апрува вернёт 204 и больше не пишет событие.
+
+Слепой retry пишущих вызовов (создать уведомление, списать оплату) опасен. Читающий `CheckService` можно повторять: повтор не меняет чужое состояние.
+
+Расследование «уведомление не пришло»:
+
+`request_id` → contract check → статус агрегата → `outbox_events` (`pending`/`sent`/`failed`) → Kafka lag → inbox `processed_events` → строка в `notifications`.
+
+## Frontend
+
+Минимальные экраны под роли. Создание поездки добавляет `companyId` из конфига приложения.
+
+На карточке поездки водителя:
+
+- `draft` — «На публикацию»;
+- `published` — «Начать поездку»;
+- `started` — «Завершить поездку» (кнопки «Отменить» нет);
+- не `canceled` / не `completed` / не `started` — «Отменить поездку».
+
+Директор видит «Approve» только для `preapproved`.
+
+## Последние изменения
+
+Зафиксировано в коде и тестах:
+
+1. Контракт создаётся **после создания поездки**, сразу в **`draft`**, не `active`. Для этого ShareTrip публикует Kafka-событие `trip_created` (`company_id` обязателен на `POST /trip`).
+2. После апрува директора (`trip_published`) контракт переходит в **`active`**. Событие `trip_preapproved` контракт больше не активирует.
+3. В `request_preconfirmed` в payload добавлен **`driver_id`**. Notification шлёт уведомление водителю: «пассажир запросил поездку».
+4. В `request_confirmed` и `request_rejected` в payload есть **`passenger_id`**. Notification шлёт уведомление пассажиру: заявка принята или отклонена.
+5. Поездку в статусе **`started` нельзя отменить** (API `409`, кнопка на UI скрыта).
+
+Ранее по тому же контуру:
+
+- отмена поездки отцепляет заявки и кладёт `passenger_ids` в `trip_canceled`;
+- старт/завершение поездки синхронизируют статусы заявок, отдельного `move_to_started` у заявки нет;
+- воркеры `TripPublishNotifier` и `RequestExpiry`;
+- директор видит и апрувит только `preapproved`;
+- видимость списков поездок и заявок по ролям.
+
+## Проверки
 
 ```bash
-.
-├── cmd
-│   └── sharetrip
-│       └── main.go
-├── config
-│   ├── app.go
-│   └── env.go
-├── coverage.out
-├── deploy
-│   ├── alloy
-│   │   └── config.alloy
-│   ├── docker-compose.yml
-│   ├── logs
-│   ├── loki
-│   │   └── config.yaml
-│   ├── otel-collector
-│   │   └── config.yaml
-│   └── prometheus
-│       └── prometheus.yml
-├── docs
-├── go.mod
-├── go.sum
-├── internal
-│   ├── api
-│   │   ├── api_test
-│   │   │   ├── create_trip_test.go
-│   │   │   ├── fixtures_test.go
-│   │   │   ├── move_trip_draft_to_publish_integration_test.go
-│   │   │   ├── move_trip_from_publish_to_started_integration_test.go
-│   │   │   └── server_test.go
-│   │   ├── create_trip.go
-│   │   ├── errors
-│   │   │   └── trip_errors.go
-│   │   ├── get_trip.go
-│   │   ├── move_trip_draft_to_publish.go
-│   │   ├── move_trip_from_publish_to_started.go
-│   │   ├── ready.go
-│   │   ├── response.go
-│   │   ├── route.go
-│   │   ├── server.go
-│   │   └── trip_handler.go
-│   ├── app
-│   │   └── logger.go
-│   ├── business
-│   │   ├── slot
-│   │   │   ├── api
-│   │   │   ├── entity
-│   │   │   ├── repository
-│   │   │   └── service
-│   │   ├── trip
-│   │   │   ├── domain
-│   │   │   │   ├── create_trip.go
-│   │   │   │   ├── domain.go
-│   │   │   │   ├── get_trip.go
-│   │   │   │   ├── move_trip_draft_to_publish.go
-│   │   │   │   └── move_trip_from_publish_to_started.go
-│   │   │   ├── entity
-│   │   │   │   └── trip.go
-│   │   │   ├── repository
-│   │   │   │   ├── create_trip.go
-│   │   │   │   ├── get_trip.go
-│   │   │   │   ├── repository.go
-│   │   │   │   ├── trip_history.go
-│   │   │   │   └── update_trip.go
-│   │   │   └── service
-│   │   │       ├── create_trip.go
-│   │   │       ├── get_trip.go
-│   │   │       ├── move_trip_draft_to_publish.go
-│   │   │       ├── move_trip_from_publish_to_started.go
-│   │   │       └── service.go
-│   │   └── tripissue
-│   │       ├── api
-│   │       ├── entity
-│   │       ├── repository
-│   │       └── service
-│   ├── clock
-│   ├── id
-│   ├── middleware
-│   │   ├── http_metrics_middleware.go
-│   │   ├── keycloak.go
-│   │   └── logger_middleware.go
-│   ├── observability
-│   │   ├── logctx
-│   │   │   └── logger_context.go
-│   │   ├── metrics
-│   │   │   └── metrics.go
-│   │   └── tracing
-│   │       └── tracing.go
-│   ├── shared
-│   │   └── outbox
-│   │       ├── event.go
-│   │       └── event_repository.go
-│   ├── storage
-│   │   ├── db.go
-│   │   └── transaction.go
-│   ├── test_utils
-│   │   └── token.go
-│   └── validators
-│       └── uuid.go
-├── logs
-│   └── app.log
-├── Makefile
-├── migrations
-│   ├── 20260620075550_001_create_trip_tables.sql
-│   └── 20260627072720_create_outbox_event_table.sql
-├── README.md
-├── reports
-│   └── coverage.out
-├── rule.md
-└── skill.md
+make lint
+make test
 ```
 
-## Основные домены
-
-### Trip
-Поездка — центральная доменная модель системы.
-
-**Trip отвечает за:**
-- кто создал поездку;
-- когда она должна состояться;
-- маршрут: откуда и куда;
-- текущий статус поездки;
-- связь с местами и заявками.
-
-**Участвует в процессах:**
-- создание поездки;
-- поиск поездки;
-- бронирование места;
-- отмена бронирования;
-- завершение поездки.
-
-### TripIssue
-TripIssue — заявка пассажира на участие в поездке или связанное с поездкой обращение.
-
-**TripIssue отвечает за:**
-- кто подал заявку;
-- к какой поездке она относится;
-- статус заявки;
-- фиксацию жизненного цикла заявки.
-
-**Участвует в процессах:**
-- подача заявки;
-- подтверждение участия;
-- отмена;
-- обработка спорных ситуаций.
-
-### Slot
-Slot — отдельное место в машине, связанное с конкретной поездкой.
-
-**Slot отвечает за:**
-- принадлежность к поездке;
-- текущее состояние места;
-- доступность для бронирования.
-
-**Возможные статусы Slot:**
-- `AVAILABLE` — место доступно;
-- `BOOKED` — место занято;
-- `CANCELLED` — место снято с бронирования или недоступно.
-
-## Жизненный цикл поездки
-
-Для домена `Trip` используются следующие состояния:
-
-- `Draft` — поездка создана, но ещё не опубликована;
-- `Published` — поездка доступна для заявок;
-- `Matched` — есть принятая заявка;
-- `Confirmed` — стороны подтвердили участие;
-- `InProgress` — поездка началась;
-- `Finished` — поездка завершена;
-- `Cancelled` — поездка отменена.
-
-### Переходы между состояниями
-
-```text
-[*] -> Draft
-Draft -> Published
-Draft -> Cancelled
-Published -> Matched
-Published -> Cancelled
-Matched -> Confirmed
-Matched -> Cancelled
-Confirmed -> InProgress
-Confirmed -> Cancelled
-InProgress -> Finished
-InProgress -> Cancelled
-Finished -> [*]
-Cancelled -> [*]
-```
-
-### Роли, выполняющие переходы
-
-| Переход | Роль |
-|---|---|
-| Draft -> Published | Водитель / создатель поездки |
-| Draft -> Cancelled | Водитель / создатель поездки |
-| Published -> Matched | Водитель при принятии заявки |
-| Published -> Cancelled | Водитель / создатель поездки |
-| Matched -> Confirmed | Водитель и пассажир |
-| Matched -> Cancelled | Водитель, пассажир, система |
-| Confirmed -> InProgress | Водитель или система |
-| Confirmed -> Cancelled | Водитель, пассажир, система |
-| InProgress -> Finished | Водитель или система |
-| InProgress -> Cancelled | Водитель или система |
-
-## Основные процессы
-
-### 1. Создание поездки
-**Инициатор:** водитель.
-
-**Участвующие домены:** `Trip`.
-
-**Результат:** создаётся новая поездка в статусе `Draft`, затем может быть опубликована.
-
-### 2. Поиск поездки
-**Инициатор:** пассажир.
-
-**Участвующие домены:** `Trip`, `Slot`.
-
-**Результат:** пассажир получает список доступных поездок и свободных мест.
-
-### 3. Бронирование места
-**Инициатор:** пассажир.
-
-**Участвующие домены:** `Trip`, `TripIssue`, `Slot`.
-
-**Результат:** создаётся заявка, свободное место переводится в занятое состояние.
-
-### 4. Отмена бронирования
-**Инициатор:** пассажир, водитель или система.
-
-**Участвующие домены:** `TripIssue`, `Slot`, `Trip`.
-
-**Результат:** заявка отменяется, место освобождается или переводится в отменённое состояние.
-
-### 5. Завершение поездки
-**Инициатор:** водитель или система.
-
-**Участвующие домены:** `Trip`, `Slot`.
-
-**Результат:** поездка переходит в статус `Finished`.
-
-## Бизнес-правила
-
-Ниже приведены базовые бизнес-правила проекта:
-
-1. **Лимит активных заявок**  
-   Пассажир может иметь ограниченное количество активных заявок одновременно.
-
-2. **Срок жизни заявки**  
-   Заявка существует ограниченное время и может быть автоматически отменена системой.
-
-3. **Двустороннее подтверждение**  
-   Для перехода поездки в статус `Confirmed` требуется подтверждение от обеих сторон.
-
-4. **Правила отмены**  
-   Для отмены поездки или бронирования действуют дедлайны и последствия для сторон.
-
-5. **Ограничение вместимости**  
-   Система не допускает бронирование мест сверх доступного количества.
-
-## Доменные события
-
-Примеры ключевых доменных событий:
-
-| Событие | Кто создаёт | Условие | Влияет на агрегат |
-|---|---|---|---|
-| `TripCreated` | Водитель | Создана новая поездка | `Trip` |
-| `TripPublished` | Водитель | Поездка опубликована | `Trip` |
-| `TripIssueSubmitted` | Пассажир | Подана заявка | `TripIssue`, `Trip` |
-| `SlotBooked` | Пассажир / система | Забронировано место | `Slot`, `Trip` |
-| `TripCancelled` | Водитель / пассажир / система | Поездка отменена | `Trip`, `Slot`, `TripIssue` |
-
-## Исключительные ситуации
-
-### 1. Овербукинг
-Если два пассажира одновременно претендуют на одно и то же место, система должна зафиксировать только одно успешное бронирование, а второе отклонить или перевести в конфликтную обработку.
-
-### 2. Отмена поездки после подтверждения
-Если водитель отменяет поездку после подтверждения участия, система должна отменить связанные бронирования, уведомить пассажиров и применить последствия согласно правилам платформы.
-
-### 3. Отсутствие подтверждения до дедлайна
-Если пассажир или водитель не подтверждает участие вовремя, система автоматически завершает ожидание и переводит заявку или поездку в соответствующее состояние.
-
-## Границы системы
-
-### Система учитывает
-- поездки;
-- заявки пассажиров;
-- места в машине;
-- статусы поездок и заявок;
-- подтверждения сторон;
-- отмены и завершение поездок.
-
-### Система не отвечает за
-- физическое перемещение автомобиля;
-- навигацию и маршрутизацию в реальном времени;
-- проверку личности пользователей вне правил платформы;
-- внешние платёжные процессы, если они не включены в требования.
-
-## Цель моделирования
-
-README фиксирует предметную область ShareTrip на концептуальном уровне. Это основа для дальнейшего проектирования:
-
-- доменной модели;
-- агрегатов и инвариантов;
-- бизнес-правил;
-- use case-сценариев;
-- API и структуры хранения данных.
-
-## Надёжная доставка события TripPublished
-
-После публикации поездки ShareTrip отправляет событие `TripPublished` в Kafka. Notification Service читает его и создаёт уведомление.
-
-Наивная схема:
-
-```text
-ShareTrip -> Kafka -> Notification Service
-```
-
-Ниже — как устроить надёжную доставку без общей транзакции между сервисами.
-
-### 1. Описание проблемы двойной записи
-
-В монолите публикацию поездки и создание уведомления можно сделать в одной транзакции PostgreSQL:
-
-```sql
-BEGIN;
-UPDATE trips SET status = 'published';
-INSERT INTO notifications (...);
-COMMIT;
-```
-
-Если любой шаг падает, откатывается всё.
-
-В микросервисах так нельзя:
-
-- у ShareTrip своя база данных;
-- у Notification Service своя база данных;
-- Kafka — отдельная инфраструктура;
-- Contract Service — отдельный сервис.
-
-Локальная транзакция PostgreSQL не покрывает эти системы сразу.
-
-**Двойная запись** — сервис пишет в два места: в свою БД и во внешнюю систему (Kafka, другой сервис, чужую БД). Если первая запись успешна, а вторая нет, система остаётся в промежуточном состоянии.
-
-### 2. Пример, как можно потерять событие после публикации поездки
-
-Наивный порядок в ShareTrip:
-
-1. Сохранить поездку в статусе `published`.
-2. Отправить `TripPublished` в Kafka.
-
-Сценарий потери:
-
-1. Водитель публикует поездку (`draft -> published`).
-2. ShareTrip успешно коммитит статус в своей БД.
-3. Kafka временно недоступна, либо процесс падает до отправки сообщения.
-4. Поездка в ShareTrip уже опубликована.
-5. Notification Service не получает `TripPublished` и не создаёт уведомление.
-
-Событие потеряно. Повтор HTTP-запроса публикации это не чинит: поездка уже `published`, повтор может вернуть 204 и больше не писать в Kafka.
-
-### 3. Почему retry недостаточен для пишущих операций
-
-Retry помогает при временных технических ошибках:
-
-- сеть дернулась;
-- сервис вернул 503;
-- Kafka недоступна;
-- consumer перезапускается.
-
-Retry не отвечает на вопрос: что делать, если часть бизнес-процесса уже выполнена?
-
-Примеры:
-
-- поездка уже `published`, а событие не ушло — повтор публикации не обязан снова писать в Kafka;
-- оплата уже зарезервирована, а уведомление не создалось — повтор оплаты может зарезервировать деньги второй раз.
-
-Если шаг выполнен, а процесс нужно остановить, нужен не retry, а **компенсация**: новое бизнес-действие (`refund`, `cancel trip`), а не повтор исходной команды.
-
-### 4. Разделение на читающую и пишущую нагрузку
-
-**Читающая нагрузка** — сервис запрашивает информацию и не меняет чужое состояние.
-
-Пример: ShareTrip спрашивает Contract Service, можно ли компании пользоваться услугой `trip_publish`. Ответ `allowed=true/false`. Если запрос не прошёл, его можно повторить: повтор не создаёт новый бизнес-эффект.
-
-**Пишущая нагрузка** — сервис просит другой сервис изменить состояние.
-
-Примеры:
-
-- ShareTrip → Payment Service: зарезервировать оплату;
-- ShareTrip → Notification Service: создать уведомление;
-- ShareTrip → Kafka: опубликовать `TripPublished`.
-
-Слепой retry здесь опасен: можно списать деньги дважды, создать два уведомления или получить разные состояния в разных сервисах. Для пишущих сценариев нужны идемпотентность, outbox, inbox, saga и компенсации.
-
-### 5. Где нужен outbox
-
-Outbox нужен на стороне **producer** — в ShareTrip, в момент публикации поездки.
-
-Изменение агрегата `Trip` и запись события выполняются в одной локальной транзакции PostgreSQL:
-
-1. `UPDATE trips SET status = 'published'`.
-2. `INSERT INTO outbox_event` с `TripPublished` (`event_id`, `trip_id`, payload).
-3. `COMMIT`.
-
-Отдельный publisher читает таблицу outbox, отправляет сообщение в Kafka и помечает событие как отправленное. Если Kafka недоступна, событие остаётся в outbox и уйдёт позже.
-
-Чтение Contract Service (`allowed?`) в outbox не кладётся: это читающий вызов.
-
-```plantuml
-@startuml
-title Outbox: публикация TripPublished
-actor Driver
-participant "ShareTrip API" as API
-database "PostgreSQL\n(trips + outbox_event)" as DB
-participant "Outbox Publisher" as Pub
-queue Kafka
-
-Driver -> API: draft -> published
-API -> DB: BEGIN
-API -> DB: UPDATE trips SET status = published
-API -> DB: INSERT outbox_event (TripPublished)
-API -> DB: COMMIT
-
-Pub -> DB: SELECT unpublished events
-Pub -> Kafka: produce TripPublished
-Pub -> DB: mark event as sent
-
-note right of DB
-  Поездка и событие
-  живут в одной транзакции.
-  Если Kafka недоступна,
-  запись остаётся в outbox.
-end note
-@enduml
-```
-
-### 6. Где нужен inbox
-
-Inbox нужен на стороне **consumer** — в Notification Service.
-
-Одно и то же `TripPublished` может прийти несколько раз:
-
-- consumer обработал сообщение и упал до commit offset;
-- Kafka отдала сообщение повторно;
-- publisher отправил событие ещё раз из outbox;
-- произошёл rebalance consumer group.
-
-Как работает inbox:
-
-1. Получить событие.
-2. Проверить `event_id` в таблице обработанных событий.
-3. Если `event_id` уже есть — пропустить.
-4. Если новый — в одной транзакции создать уведомление и сохранить `event_id`.
-5. После успешного commit — commit offset.
-
-Inbox не обещает, что событие придёт один раз. Он обещает, что бизнес-действие применится один раз: одно уведомление на один `event_id`.
-
-```plantuml
-@startuml
-title Inbox: идемпотентная обработка TripPublished
-queue Kafka
-participant "Notification Service" as NS
-database "Notification DB\n(notifications + inbox)" as NDB
-
-Kafka -> NS: TripPublished (event_id)
-
-NS -> NDB: SELECT event_id FROM inbox
-
-alt event_id уже есть
-  NS --> Kafka: skip, commit offset
-else новый event_id
-  NS -> NDB: BEGIN
-  NS -> NDB: INSERT notification
-  NS -> NDB: INSERT inbox (event_id)
-  NS -> NDB: COMMIT
-  NS --> Kafka: commit offset
-end
-
-note right of NDB
-  Повтор Kafka не создаёт
-  второе уведомление.
-end note
-@enduml
-```
-
-### 7. Какие действия могут быть компенсациями в ShareTrip
-
-Компенсация — бизнес-действие, которое нейтрализует уже выполненный шаг. Это не технический rollback чужой базы.
-
-| Уже выполненный шаг | Если процесс нельзя продолжить | Компенсация |
-|---|---|---|
-| Поездка переведена в `published` | Договор стал недействителен, оплата не прошла | Отмена публикации: `published -> cancelled` и событие `TripCancelled` / `TripPublicationCancelled` |
-| Событие `TripPublished` уже ушло | Поездку отменили после публикации | Новое событие отмены. Старое уведомление нельзя «разотправить» |
-| Notification Service создал уведомление | Поездку отменили | Новое уведомление об отмене |
-| Payment Service зарезервировал оплату | Публикация отменена | `refund` / снятие резерва |
-| Пассажир подал заявку на опубликованную поездку | Поездку отменили | Отмена заявок и освобождение слотов |
-
-Outbox и inbox надёжно доставляют и обрабатывают события. Saga описывает порядок шагов и эти компенсации. Saga может использовать outbox/inbox, но не заменяет их.
-
-Общий процесс `TripPublished -> NotificationCreated`:
-
-```plantuml
-@startuml
-title TripPublished -> NotificationCreated
-actor Driver
-participant "ShareTrip" as ST
-database "ShareTrip DB" as STDB
-participant "Outbox Publisher" as Pub
-queue Kafka
-participant "Notification Service" as NS
-database "Notification DB" as NDB
-actor Passenger
-
-Driver -> ST: опубликовать поездку
-ST -> STDB: trips.published + outbox_event\n(одна транзакция)
-
-Pub -> STDB: прочитать outbox
-Pub -> Kafka: TripPublished
-Pub -> STDB: пометить событие отправленным
-
-Kafka -> NS: TripPublished
-NS -> NDB: inbox: event_id новый?
-NS -> NDB: notification + inbox\n(одна транзакция)
-NS -> Passenger: NotificationCreated
-
-note over ST, NS
-  Outbox: не потерять событие после published.
-  Inbox: не создать уведомление дважды.
-end note
-@enduml
-```
-
-## Как расследовать: уведомление не пришло
-
-Сценарий: пользователь опубликовал поездку, но уведомление не пришло. Смотрим не один сервис, а весь процесс:
-
-`user -> sharetrip -> contract -> outbox -> kafka -> notification -> inbox`
-
-1. Найти HTTP-запрос в логах ShareTrip по `request_id` или `trip_id`.
-2. Проверить вызов contract: заголовки `X-Request-ID`, `X-Correlation-ID`, `traceparent`.
-3. В логах contract найти `operation=CheckPermission` с тем же `correlation_id`. `result=allowed` — проверка прошла; `denied` / `error` — события быть не должно.
-4. Проверить, что поездка стала `published`.
-5. Взять `event_id` из лога `operation=OutboxInsert`.
-6. Проверить `outbox_events`: `status` (`pending` / `sent` / `failed`) и `metadata`.
-7. Проверить публикацию в Kafka: `operation=OutboxPublish`, метрики `sharetrip_outbox_pending_total` и `sharetrip_outbox_publish_failed_total`.
-8. Проверить lag consumer group `notification-service` по topic событий поездок.
-9. В логах notification найти событие по `event_id` (`correlation_id`, `causation_id`, `trace_id`).
-10. Проверить inbox: `operation=InboxInsert`, `result=created` или `duplicate`.
-11. Проверить отправку: `operation=SendNotification`, `result=sent`. Смотреть `notification_send_total{result="error"}`.
-12. Если отправка упала, искать ошибку провайдера. Токены и секреты в логи не писать.
-
-Идентификаторы:
-
-- `request_id` — входящий HTTP-запрос (`X-Request-ID`);
-- `correlation_id` — процесс публикации (`X-Correlation-ID`, по умолчанию равен `request_id`);
-- `traceparent` / `trace_id` — распределённая трасса;
-- `event_id` — событие в outbox, Kafka headers и inbox;
-- `causation_id` — причина события (для `TripPublished` это `request_id`).
-
-Dashboard: Grafana → ShareTrip → **Trip publication**.
-
-## Статус проекта
-
-Проект находится на стадии доменного анализа и формализации правил. Техническая реализация не входит в рамки текущего этапа.
+То же в репозиториях `job4j_go_share_trip_contracts` и `job4j_go_share_trip_notification`.

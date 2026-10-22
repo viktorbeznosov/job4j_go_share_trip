@@ -39,6 +39,3 @@ func (d *TripDomain) GetByTripID(ctx context.Context, request GetTripRequest) (*
 		CreatedAt:     trip.CreatedAt,
 	}, nil
 }
-
-
-

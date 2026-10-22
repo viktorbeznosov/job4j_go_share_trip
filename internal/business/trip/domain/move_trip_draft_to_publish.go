@@ -65,9 +65,9 @@ func (d *TripDomain) MoveFromDraftToPublish(
 			tripErrors.ErrTripNotDraft, entity.StatusDraft, req.OldStatus)
 	}
 
-	if req.NewStatus != string(entity.StatusPublished) {
+	if req.NewStatus != string(entity.StatusPreapproved) {
 		return nil, fmt.Errorf("%w: expected %s, got %s",
-			tripErrors.ErrInvalidStatusTransition, entity.StatusPublished, req.NewStatus)
+			tripErrors.ErrInvalidStatusTransition, entity.StatusPreapproved, req.NewStatus)
 	}
 
 	trip, err := storage.Tx(ctx, d.tripRepository.GetDB(), func(tx pgx.Tx) (*entity.Trip, error) {
@@ -82,8 +82,8 @@ func (d *TripDomain) MoveFromDraftToPublish(
 				tripErrors.ErrDriverNotOwner, req.ClientID, trip.ID)
 		}
 
-		if trip.Status == entity.StatusPublished {
-			logger.Info("trip already published, skipping update")
+		if trip.Status == entity.StatusPreapproved {
+			logger.Info("trip already preapproved, skipping update")
 			return &trip, nil
 		}
 
@@ -105,11 +105,11 @@ func (d *TripDomain) MoveFromDraftToPublish(
 			return nil, err
 		}
 
-		event := outbox.NewPendingEvent(outbox.EventTypeTripPublished, trip.ID, nil)
+		event := outbox.NewPendingEvent(outbox.EventTypeTripPreapproved, trip.ID, nil)
 		meta := events.MetadataFromContext(
 			ctx,
 			event.ID.String(),
-			events.EventTypeTripPublished,
+			events.EventTypeTripPreapproved,
 			event.CreatedAt,
 		)
 		metadataJSON, err := json.Marshal(meta)
@@ -118,7 +118,7 @@ func (d *TripDomain) MoveFromDraftToPublish(
 		}
 		event.Metadata = metadataJSON
 
-		payload, err := json.Marshal(events.NewTripPublished(
+		payload, err := json.Marshal(events.NewTripPreapproved(
 			event.ID,
 			trip.ID,
 			trip.DriverID,
@@ -155,7 +155,7 @@ func (d *TripDomain) MoveFromDraftToPublish(
 		return nil, err
 	}
 
-	logger.Info("trip moved from draft to publish successfully",
+	logger.Info("trip moved from draft to preapproved successfully",
 		slog.String("new_status", string(trip.Status)),
 	)
 

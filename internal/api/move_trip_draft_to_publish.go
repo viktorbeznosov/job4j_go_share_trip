@@ -83,7 +83,7 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		return h.errorMapper.MapParseError(c, err, "Error get driver id")
 	}
 
-	if tripResp.Status == string(entity.StatusPublished) {
+	if tripResp.Status == string(entity.StatusPreapproved) {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 
@@ -98,7 +98,7 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		ClientID:  clientUUID,
 		CompanyID: req.CompanyID,
 		OldStatus: string(entity.StatusDraft),
-		NewStatus: string(entity.StatusPublished),
+		NewStatus: string(entity.StatusPreapproved),
 	}
 
 	serviceResp, err := h.TripService.MoveFromDraftToPublish(ctx, serviceReq)
@@ -113,7 +113,7 @@ func (h *TripHandler) MoveTripDraftToPublish(c *fiber.Ctx) error {
 		attribute.String("status", string(serviceResp.Status)),
 	)
 
-	logger.Info("trip published successfully", slog.String("trip_id", serviceResp.ID.String()))
+	logger.Info("trip moved to preapproved successfully", slog.String("trip_id", serviceResp.ID.String()))
 
 	return c.Status(fiber.StatusOK).JSON(Response{
 		Status: "Success",

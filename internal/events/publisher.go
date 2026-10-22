@@ -11,8 +11,14 @@ import (
 )
 
 type MessagePublisher interface {
+	PublishTripCreated(ctx context.Context, event TripCreated) error
+	PublishTripPreapproved(ctx context.Context, event TripPreapproved) error
 	PublishTripPublished(ctx context.Context, event TripPublished) error
 	PublishTripStarted(ctx context.Context, event TripStarted) error
+	PublishTripCanceled(ctx context.Context, event TripCanceled) error
+	PublishTripCompleted(ctx context.Context, event TripCompleted) error
+	PublishTripPublishNotificated(ctx context.Context, event TripPublishNotificated) error
+	PublishRequestEvent(ctx context.Context, event RequestEvent) error
 }
 
 type Publisher struct {
@@ -106,6 +112,30 @@ func (p *Publisher) publishOne(ctx context.Context, event outbox.Event) error {
 	}
 
 	switch event.EventType {
+	case outbox.EventTypeTripCreated:
+		var tripCreated TripCreated
+		if err := json.Unmarshal(event.Payload, &tripCreated); err != nil {
+			p.observePublish("error")
+			p.metrics.OutboxPublishFailedTotal.Inc()
+			_ = p.outbox.MarkFailed(ctx, event.ID, err)
+			return nil
+		}
+		tripCreated.applyMetadata(metadataFromJSON(event.Metadata))
+		return publish(tripCreated.EventID, tripCreated.CorrelationID, tripCreated.CausationID, func() error {
+			return p.kafka.PublishTripCreated(ctx, tripCreated)
+		})
+	case outbox.EventTypeTripPreapproved:
+		var tripPreapproved TripPreapproved
+		if err := json.Unmarshal(event.Payload, &tripPreapproved); err != nil {
+			p.observePublish("error")
+			p.metrics.OutboxPublishFailedTotal.Inc()
+			_ = p.outbox.MarkFailed(ctx, event.ID, err)
+			return nil
+		}
+		tripPreapproved.applyMetadata(metadataFromJSON(event.Metadata))
+		return publish(tripPreapproved.EventID, tripPreapproved.CorrelationID, tripPreapproved.CausationID, func() error {
+			return p.kafka.PublishTripPreapproved(ctx, tripPreapproved)
+		})
 	case outbox.EventTypeTripPublished:
 		var tripPublished TripPublished
 		if err := json.Unmarshal(event.Payload, &tripPublished); err != nil {
@@ -130,6 +160,61 @@ func (p *Publisher) publishOne(ctx context.Context, event outbox.Event) error {
 		return publish(tripStarted.EventID, tripStarted.CorrelationID, tripStarted.CausationID, func() error {
 			return p.kafka.PublishTripStarted(ctx, tripStarted)
 		})
+	case outbox.EventTypeTripCanceled:
+		var tripCanceled TripCanceled
+		if err := json.Unmarshal(event.Payload, &tripCanceled); err != nil {
+			p.observePublish("error")
+			p.metrics.OutboxPublishFailedTotal.Inc()
+			_ = p.outbox.MarkFailed(ctx, event.ID, err)
+			return nil
+		}
+		tripCanceled.applyMetadata(metadataFromJSON(event.Metadata))
+		return publish(tripCanceled.EventID, tripCanceled.CorrelationID, tripCanceled.CausationID, func() error {
+			return p.kafka.PublishTripCanceled(ctx, tripCanceled)
+		})
+	case outbox.EventTypeTripCompleted:
+		var tripCompleted TripCompleted
+		if err := json.Unmarshal(event.Payload, &tripCompleted); err != nil {
+			p.observePublish("error")
+			p.metrics.OutboxPublishFailedTotal.Inc()
+			_ = p.outbox.MarkFailed(ctx, event.ID, err)
+			return nil
+		}
+		tripCompleted.applyMetadata(metadataFromJSON(event.Metadata))
+		return publish(tripCompleted.EventID, tripCompleted.CorrelationID, tripCompleted.CausationID, func() error {
+			return p.kafka.PublishTripCompleted(ctx, tripCompleted)
+		})
+	case outbox.EventTypeTripPublishNotificated:
+		var notified TripPublishNotificated
+		if err := json.Unmarshal(event.Payload, &notified); err != nil {
+			p.observePublish("error")
+			p.metrics.OutboxPublishFailedTotal.Inc()
+			_ = p.outbox.MarkFailed(ctx, event.ID, err)
+			return nil
+		}
+		notified.applyMetadata(metadataFromJSON(event.Metadata))
+		return publish(notified.EventID, notified.CorrelationID, notified.CausationID, func() error {
+			return p.kafka.PublishTripPublishNotificated(ctx, notified)
+		})
+	case outbox.EventTypeRequestCreated,
+		outbox.EventTypeRequestPublished,
+		outbox.EventTypeRequestPreconfirmed,
+		outbox.EventTypeRequestConfirmed,
+		outbox.EventTypeRequestRejected,
+		outbox.EventTypeRequestStarted,
+		outbox.EventTypeRequestCompleted,
+		outbox.EventTypeRequestExpired:
+		var requestEvent RequestEvent
+		if err := json.Unmarshal(event.Payload, &requestEvent); err != nil {
+			p.observePublish("error")
+			p.metrics.OutboxPublishFailedTotal.Inc()
+			_ = p.outbox.MarkFailed(ctx, event.ID, err)
+			return nil
+		}
+		requestEvent.applyMetadata(metadataFromJSON(event.Metadata))
+		return publish(requestEvent.EventID, requestEvent.CorrelationID, requestEvent.CausationID, func() error {
+			return p.kafka.PublishRequestEvent(ctx, requestEvent)
+		})
 	default:
 		return p.outbox.MarkSent(ctx, event.ID)
 	}
@@ -137,6 +222,26 @@ func (p *Publisher) publishOne(ctx context.Context, event outbox.Event) error {
 
 func (p *Publisher) observePublish(result string) {
 	p.metrics.OutboxPublishTotal.WithLabelValues(result).Inc()
+}
+
+func (e *TripCreated) applyMetadata(meta EventMetadata) {
+	merged := mergeEventMetadata(e.Metadata(), meta)
+	e.EventID = merged.EventID
+	e.EventType = merged.EventType
+	e.CorrelationID = merged.CorrelationID
+	e.CausationID = merged.CausationID
+	e.Traceparent = merged.Traceparent
+	e.OccurredAt = merged.OccurredAt
+}
+
+func (e *TripPreapproved) applyMetadata(meta EventMetadata) {
+	merged := mergeEventMetadata(e.Metadata(), meta)
+	e.EventID = merged.EventID
+	e.EventType = merged.EventType
+	e.CorrelationID = merged.CorrelationID
+	e.CausationID = merged.CausationID
+	e.Traceparent = merged.Traceparent
+	e.OccurredAt = merged.OccurredAt
 }
 
 func (e *TripPublished) applyMetadata(meta EventMetadata) {
@@ -150,6 +255,36 @@ func (e *TripPublished) applyMetadata(meta EventMetadata) {
 }
 
 func (e *TripStarted) applyMetadata(meta EventMetadata) {
+	merged := mergeEventMetadata(e.Metadata(), meta)
+	e.EventID = merged.EventID
+	e.EventType = merged.EventType
+	e.CorrelationID = merged.CorrelationID
+	e.CausationID = merged.CausationID
+	e.Traceparent = merged.Traceparent
+	e.OccurredAt = merged.OccurredAt
+}
+
+func (e *TripCanceled) applyMetadata(meta EventMetadata) {
+	merged := mergeEventMetadata(e.Metadata(), meta)
+	e.EventID = merged.EventID
+	e.EventType = merged.EventType
+	e.CorrelationID = merged.CorrelationID
+	e.CausationID = merged.CausationID
+	e.Traceparent = merged.Traceparent
+	e.OccurredAt = merged.OccurredAt
+}
+
+func (e *TripCompleted) applyMetadata(meta EventMetadata) {
+	merged := mergeEventMetadata(e.Metadata(), meta)
+	e.EventID = merged.EventID
+	e.EventType = merged.EventType
+	e.CorrelationID = merged.CorrelationID
+	e.CausationID = merged.CausationID
+	e.Traceparent = merged.Traceparent
+	e.OccurredAt = merged.OccurredAt
+}
+
+func (e *TripPublishNotificated) applyMetadata(meta EventMetadata) {
 	merged := mergeEventMetadata(e.Metadata(), meta)
 	e.EventID = merged.EventID
 	e.EventType = merged.EventType

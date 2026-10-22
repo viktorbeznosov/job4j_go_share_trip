@@ -2,9 +2,8 @@ package domain
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"job4j_go_share_trip/internal/business/trip/entity"
+	"job4j_go_share_trip/internal/events"
 	"job4j_go_share_trip/internal/observability/logctx"
 	"job4j_go_share_trip/internal/shared/outbox"
 	"job4j_go_share_trip/internal/storage"
@@ -17,6 +16,7 @@ import (
 
 type CreateTripRequest struct {
 	DriverID      uuid.UUID
+	CompanyID     uuid.UUID
 	FromPoint     string
 	ToPoint       string
 	DepartureTime time.Time
@@ -67,23 +67,28 @@ func (d *TripDomain) Create(ctx context.Context, req CreateTripRequest) (*Create
 			return err
 		}
 
-		payload, err := json.Marshal(trip)
-		if err != nil {
-			return err
-		}
-
-		event := outbox.NewPendingEvent(
-			outbox.EventTypeTripCreated,
+		if err := d.saveTripOutboxTx(
+			ctx,
+			tx,
 			trip.ID,
-			payload,
-		)
-
-		if err := d.eventRepository.SaveTx(ctx, tx, &event); err != nil {
+			outbox.EventTypeTripCreated,
+			events.EventTypeTripCreated,
+			func(eventID uuid.UUID, occurredAt time.Time, meta events.EventMetadata) (any, error) {
+				return events.NewTripCreated(
+					eventID,
+					trip.ID,
+					trip.DriverID,
+					req.CompanyID,
+					occurredAt,
+					meta,
+				), nil
+			},
+		); err != nil {
 			logger.Error("failed to save outbox event", slog.Any("error", err))
 			result = "error"
 			d.metrics.TripCreateTotal.WithLabelValues(result).Inc()
 			d.metrics.TripCreateDuration.WithLabelValues(result).Observe(time.Since(started).Seconds())
-			return fmt.Errorf("failed to save outbox event: %w", err)
+			return err
 		}
 
 		return nil

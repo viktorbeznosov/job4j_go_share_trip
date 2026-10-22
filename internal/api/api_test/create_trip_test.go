@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"job4j_go_share_trip/internal/api"
+	"job4j_go_share_trip/internal/events"
 	testutils "job4j_go_share_trip/internal/test_utils"
 )
 
@@ -22,6 +24,7 @@ func Test_CreateTrip(t *testing.T) {
 			ToPoint:       "TestToPoint",
 			DepartureTime: time.Now().AddDate(0, 0, 1).Format("2006-01-02 15:04"),
 			Seats:         2,
+			CompanyID:     testCompanyID,
 		}
 
 		body, err := json.Marshal(payload)
@@ -71,5 +74,20 @@ func Test_CreateTrip(t *testing.T) {
 		}
 
 		assert.Equal(t, expected, response.Data)
+
+		payloadBytes, err := outboxPayloadByType(
+			context.Background(),
+			testPool,
+			uuid.MustParse(response.Data.ID),
+			"trip_created",
+		)
+		require.NoError(t, err)
+
+		var createdEvent events.TripCreated
+		require.NoError(t, json.Unmarshal(payloadBytes, &createdEvent))
+		assert.Equal(t, "trip_created", string(createdEvent.EventType))
+		assert.Equal(t, userID.String(), createdEvent.DriverID)
+		assert.Equal(t, testCompanyID.String(), createdEvent.CompanyID)
+		assert.Equal(t, response.Data.ID, createdEvent.TripID)
 	})
 }

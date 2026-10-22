@@ -66,5 +66,3 @@ func (r *TripRepository) CreateTx(ctx context.Context, db Querier, trip *entity.
 	logger.Info("insert trip completed")
 	return nil
 }
-
-
