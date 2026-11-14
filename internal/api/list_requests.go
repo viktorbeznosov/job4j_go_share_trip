@@ -36,9 +36,15 @@ func (h *RequestHandler) ListRequests(c *fiber.Ctx) error {
 		return h.errorMapper.MapValidationError(c, err)
 	}
 
+	tripID, err := parseOptionalUUIDQuery(c.Query("tripId"), tripErrors.ErrInvalidTripID)
+	if err != nil {
+		return h.errorMapper.MapValidationError(c, err)
+	}
+
 	result, err := h.RequestService.List(c.UserContext(), service.ListRequestsInput{
 		Viewer:      viewer,
 		PassengerID: passengerID,
+		TripID:      tripID,
 		ListParams:  params,
 	})
 	if err != nil {

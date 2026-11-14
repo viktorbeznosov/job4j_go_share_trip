@@ -13,6 +13,20 @@ func (s *Server) Route(route fiber.Router) {
 	route.Get("/ready", s.Ready)
 	route.Get("/metrics", adaptor.HTTPHandler(promhttp.HandlerFor(s.Registry, promhttp.HandlerOpts{})))
 
+	// Подсказка пунктов для выпадающих списков. Доступна всем ролям
+	// без фильтрации по видимости — это словарь, а не данные сущностей.
+	route.Get(
+		"/points",
+		middleware.RequireClientRole(config.Env("KEYCLOAK_CLIENT_ID", "sharetrip-api"), "client"),
+		middleware.RequireAnyUserPermission(
+			middleware.PermissionShareTripDriver,
+			middleware.PermissionShareTripPassenger,
+			middleware.PermissionShareTripDirector,
+			middleware.PermissionShareTripAdmin,
+		),
+		s.TripHandler.SuggestPoints,
+	)
+
 	trip := route.Group("/trip")
 	trip.Post(
 		"/",

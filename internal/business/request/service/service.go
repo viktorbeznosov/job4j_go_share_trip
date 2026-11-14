@@ -99,6 +99,7 @@ func (s *RequestService) GetByIDForViewer(ctx context.Context, requestID uuid.UU
 type ListRequestsInput struct {
 	Viewer      access.Viewer
 	PassengerID *uuid.UUID
+	TripID      *uuid.UUID
 	ListParams  access.ListParams
 }
 
@@ -113,6 +114,7 @@ func (s *RequestService) List(ctx context.Context, req ListRequestsInput) (*List
 	resp, err := s.requestDomain.List(ctx, domain.ListRequestsInput{
 		Viewer:      req.Viewer,
 		PassengerID: req.PassengerID,
+		TripID:      req.TripID,
 		ListParams:  req.ListParams,
 	})
 	if err != nil {

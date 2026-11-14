@@ -24,6 +24,7 @@ var (
 	ErrInvalidSortDir          = errors.New("invalid sort direction")
 	ErrInvalidLimit            = errors.New("invalid limit")
 	ErrInvalidOffset           = errors.New("invalid offset")
+	ErrTermTooLong             = errors.New("search term must be at most 256 characters")
 	ErrFilterNotAllowed        = errors.New("filter is not allowed")
 	ErrPassengerIDRequired     = errors.New("passenger id is required")
 	ErrInvalidPassengerID      = errors.New("passenger id must be a valid UUID")
@@ -101,6 +102,8 @@ func GetErrorMessage(err error) string {
 		return "Invalid limit"
 	case errors.Is(err, ErrInvalidOffset):
 		return "Invalid offset"
+	case errors.Is(err, ErrTermTooLong):
+		return "Search term must be at most 256 characters"
 	case errors.Is(err, ErrFilterNotAllowed):
 		return "Filter is not allowed"
 	case errors.Is(err, ErrPassengerIDRequired):
@@ -204,6 +207,7 @@ func GetHTTPStatus(err error) int {
 		errors.Is(err, ErrInvalidSortDir),
 		errors.Is(err, ErrInvalidLimit),
 		errors.Is(err, ErrInvalidOffset),
+		errors.Is(err, ErrTermTooLong),
 		errors.Is(err, ErrFilterNotAllowed),
 		errors.Is(err, ErrPassengerIDRequired),
 		errors.Is(err, ErrInvalidPassengerID),

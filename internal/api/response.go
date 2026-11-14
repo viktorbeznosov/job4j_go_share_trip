@@ -105,6 +105,19 @@ type GetRequestResponseWrapper struct {
 	Error   string          `json:"error,omitempty"`
 }
 
+// SuggestPointsResponse — данные подсказки пунктов для выпадающего списка.
+// Items всегда массив (включая пустой), чтобы фронт получал [], а не null.
+type SuggestPointsResponse struct {
+	Items []string `json:"items"`
+}
+
+type SuggestPointsResponseWrapper struct {
+	Status  string                `json:"status"`
+	Message string                `json:"message,omitempty"`
+	Data    SuggestPointsResponse `json:"data"`
+	Error   string                `json:"error,omitempty"`
+}
+
 type ErrorResponseWrapper struct {
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`

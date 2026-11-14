@@ -18,6 +18,7 @@ type RequestListFilter struct {
 	Viewer      access.Viewer
 	ID          *uuid.UUID
 	PassengerID *uuid.UUID
+	TripID      *uuid.UUID
 	ListParams  access.ListParams
 }
 
@@ -134,6 +135,10 @@ func requestVisibilityAndFilters(filter RequestListFilter) (string, []any) {
 
 	if filter.ID != nil {
 		add("req.id = ?", *filter.ID)
+	}
+
+	if filter.TripID != nil {
+		add("req.trip_id = ?", *filter.TripID)
 	}
 
 	if filter.Viewer.IsAdmin {

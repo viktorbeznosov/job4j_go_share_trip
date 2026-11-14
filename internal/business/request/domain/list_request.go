@@ -14,6 +14,7 @@ import (
 type ListRequestsInput struct {
 	Viewer      access.Viewer
 	PassengerID *uuid.UUID
+	TripID      *uuid.UUID
 	ListParams  access.ListParams
 }
 
@@ -36,6 +37,7 @@ func (d *RequestDomain) List(ctx context.Context, req ListRequestsInput) (*ListR
 	items, total, err := d.requestRepository.List(ctx, repository.RequestListFilter{
 		Viewer:      req.Viewer,
 		PassengerID: req.PassengerID,
+		TripID:      req.TripID,
 		ListParams:  params,
 	})
 	if err != nil {
